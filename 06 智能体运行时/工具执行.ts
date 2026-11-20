@@ -73,6 +73,34 @@ export const 工具表: 工具定义[] = [
     },
   },
   {
+    名称: "query_ledger",
+    中文名: "查台账",
+    说明: "按册查台账，返回结构化行（列名 → 值），别自己用正则抠表格。",
+    写盘: false,
+    参数: {
+      台账: { 类型: "字符串", 说明: "哪一册：时间线 / 出场追踪 / 关系线 / 属性变更 / 队伍状态 / 物品台账 / 承诺台账；留空＝全部" },
+      关键词: { 类型: "字符串", 说明: "只返回含这个词的行（可选，比如人物名）" },
+    },
+  },
+  {
+    名称: "query_setting",
+    中文名: "查设定",
+    说明: "按名字模糊查设定卡（人物/地点/物品/规则…），返回卡片字段与正文开头。",
+    写盘: false,
+    参数: {
+      名: { 类型: "字符串", 必填: true, 说明: "设定名或别名，例如「三叶」「鹦桥镇」" },
+    },
+  },
+  {
+    名称: "query_foreshadow",
+    中文名: "查伏笔",
+    说明: "返回伏笔的状态机结果（埋章/兑章/搁置章数/参考间隔/超期/久置），和看板同一套算法。",
+    写盘: false,
+    参数: {
+      只看: { 类型: "字符串", 说明: "待兑现 / 已兑现 / 超期 / 久置 / 全部，默认「待兑现」" },
+    },
+  },
+  {
     名称: "write_chapter",
     中文名: "写章节",
     说明: "把整章正文覆盖写成给定内容并提交。会改动正文文件，属于写盘工具，必须先得到作者确认。",
@@ -175,6 +203,9 @@ export interface 工具环境 {
   同步台账: (章节号: number) => Promise<{ 成功: boolean; 说明: string }>
   派活: (任务: string, 章节号: number) => Promise<{ 汇总: string; 各自: unknown[] }>
   读文件: (路径: string, 字数上限: number) => Promise<{ 文本: string; 是文本: boolean }>
+  查台账: (台账: string, 关键词: string) => Promise<{ 文本: string; 行数: number }>
+  查设定: (名: string) => Promise<{ 文本: string; 找到: boolean }>
+  查伏笔: (只看: string) => Promise<string>
   写章节: (章节号: number, 正文: string) => Promise<{ 成功: boolean; 说明: string }>
 }
 
@@ -269,6 +300,18 @@ export async function 跑工具(名: string, 原始参数: unknown, 环境: 工�
         const 结果 = await 环境.读文件(String(参数.路径), Number(参数.字数上限 ?? 4000))
         if (!结果.是文本) return 收尾(定义, 参数, 轮次, "（不是文本文件，读不了）", "非文本")
         return 收尾(定义, 参数, 轮次, 结果.文本, "已读 " + 结果.文本.length + " 字")
+      }
+      case "query_ledger": {
+        const 数据 = await 环境.查台账(String(参数.台账 ?? ""), String(参数.关键词 ?? ""))
+        return 收尾(定义, 参数, 轮次, 数据.文本, "共 " + 数据.行数 + " 行")
+      }
+      case "query_setting": {
+        const 数据 = await 环境.查设定(String(参数.名))
+        return 收尾(定义, 参数, 轮次, 数据.文本, 数据.找到 ? "命中 1 张卡" : "没找到这张卡")
+      }
+      case "query_foreshadow": {
+        const 文本 = await 环境.查伏笔(String(参数.只看 ?? ""))
+        return 收尾(定义, 参数, 轮次, 文本, "已按状态机汇总")
       }
       case "write_chapter": {
         const 结果 = await 环境.写章节(Number(参数.章节号), String(参数.正文))
