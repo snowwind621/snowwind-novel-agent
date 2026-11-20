@@ -1,6 +1,6 @@
 // 只负责一件事：在书库副本上跑一次派活，验证结果确实归档进讨论区。
-import { 创建请求处理 } from "../01 应用外壳/请求处理"
-import { 读文本 } from "../11 文件工作区/原子写"
+import { 创建请求处理 } from "../../01 应用外壳/请求处理"
+import { 读文本 } from "../../11 文件工作区/原子写"
 import path from "node:path"
 
 const 副本 = process.argv[2]

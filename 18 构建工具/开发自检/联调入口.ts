@@ -1,12 +1,12 @@
 // 只负责一件事：不打开界面，把「读库 → 看板 → 提示词 → 真模型流式」完整跑一遍。
 // 网关与密钥不写死在代码里：先读本机设置（%APPDATA%/snowwind-novel-agent/设置.json），也可以用环境变量覆盖。
 import path from "node:path"
-import { 扫描项目 } from "../10 书库检索/项目扫描"
-import { 装配看板 } from "../10 书库检索/看板装配"
-import { 组装系统提示 } from "../05 编排内核/章节提示词"
-import { 流式对话 } from "../04 模型接入/网关客户端"
-import { 读文本 } from "../11 文件工作区/原子写"
-import { 读设置 } from "../14 配置密钥/设置存储"
+import { 扫描项目 } from "../../10 书库检索/项目扫描"
+import { 装配看板 } from "../../10 书库检索/看板装配"
+import { 组装系统提示 } from "../../05 编排内核/章节提示词"
+import { 流式对话 } from "../../04 模型接入/网关客户端"
+import { 读文本 } from "../../11 文件工作区/原子写"
+import { 读设置 } from "../../14 配置密钥/设置存储"
 
 const 书库 = process.argv[2]
 const 数据目录 = path.join(process.env.APPDATA ?? "", "snowwind-novel-agent")

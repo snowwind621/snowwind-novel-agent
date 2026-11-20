@@ -8,6 +8,7 @@ import { 正文编辑 } from "./正文编辑"
 import { 文件视图 } from "./文件视图"
 import { AI面板 } from "./AI面板"
 import { 设置面板 } from "./设置面板"
+import { 视觉总览 } from "./视觉总览"
 import { 图标 } from "./图标"
 
 function 读宽度(键: string, 默认: number, 下限: number, 上限: number): number {
@@ -48,6 +49,10 @@ export function 三栏布局() {
   const [书架, set书架] = useState<书架项[]>([])
   const [显示书架, set显示书架] = useState(false)
   const [文件, set文件] = useState<文件内容 | null>(null)
+  /** 中栏视图级别：正文编辑 / 全书视图（存本地，重开保持） */
+  const [中栏视图, set中栏视图] = useState<"编辑" | "全书">(() =>
+    localStorage.getItem("中栏视图") === "全书" ? "全书" : "编辑",
+  )
   const [待裁定, set待裁定] = useState<待裁定章[]>([])
   const [左页, set左页] = useState<左页>(初页)
   const [左宽, set左宽] = useState(() => 读宽度("左栏宽", 300, 220, 460))
@@ -113,6 +118,14 @@ export function 三栏布局() {
     if (!设定 || 设定.外观.主题 !== "跟随系统") return
     return 盯系统主题(() => 套用外观(设定.外观))
   }, [设定?.外观.主题, 设定?.外观.界面字号])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("中栏视图", 中栏视图)
+    } catch {
+      /* 存不下不影响本回合 */
+    }
+  }, [中栏视图])
 
   // 宽度落 localStorage：重开保持上次拖到的位置。
   useEffect(() => {
@@ -250,6 +263,7 @@ export function 三栏布局() {
     set脏(false)
     set状态字("")
     set文件(null)
+    set中栏视图("编辑")
     return true
   }
 
@@ -501,6 +515,13 @@ export function 三栏布局() {
         />
         {文件 ? (
           <文件视图 内容={文件} 保存={保存文件} 关闭={() => set文件(null)} />
+        ) : 中栏视图 === "全书" ? (
+          <视觉总览
+            项目={项目}
+            看板={看板}
+            打开文件={(相对路径: string) => void 打开文件(相对路径)}
+            切回编辑={() => set中栏视图("编辑")}
+          />
         ) : (
         <正文编辑
           已开书库={Boolean(项目)}
@@ -517,6 +538,7 @@ export function 三栏布局() {
             /* 选区暂时没有消费者：改写已改成直接跟 agent 说，等 task-20 的工具再来取 */
           }}
           状态字={状态字}
+          切总览={() => set中栏视图("全书")}
         />
         )}
         <div

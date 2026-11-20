@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from "react"
 import { 计字数 } from "./接口"
 import { 渲染Markdown, 取回Markdown } from "./编辑器渲染"
 import "./编辑器样式.css"
+import { 视图切换 } from "./视觉总览"
 import { 图标 } from "./图标"
 import type { 图标名 } from "./图标"
 
@@ -87,6 +88,8 @@ export function 正文编辑(属性: {
   保存: () => void
   报选区: (起: number, 止: number) => void
   状态字: string
+  /** 切到中栏的「全书视图」；不传就不显示这两个视图按钮 */
+  切总览?: () => void
 }) {
   const { 已开书库, 编号, 标题, 正文, 脏, 改, 保存, 报选区, 状态字 } = 属性
   const [模式, set模式] = useState<视图模式>(读模式)
@@ -366,6 +369,14 @@ export function 正文编辑(属性: {
       </div>
 
       <div className="编辑器-工具行">
+        {属性.切总览 ? (
+          <>
+            <视图切换 当前="编辑" 切={(视图) => {
+              if (视图 === "全书") 属性.切总览?.()
+            }} />
+            <span className="编辑器-分隔" />
+          </>
+        ) : null}
         <div className="编辑器-模式">
           {模式们.map((一个) => (
             <button

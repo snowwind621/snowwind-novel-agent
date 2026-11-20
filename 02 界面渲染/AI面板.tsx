@@ -4,6 +4,7 @@ import { 桥, 时刻 } from "./接口"
 import type { 看板数据, 设置, 项目摘要, 集群成员, 对话事件, 对话条目, 用量 } from "./接口"
 import { 组装系统提示 } from "../05 编排内核/章节提示词"
 import { 该压缩, 取要压的, 造摘要提示, 拼用户输入, 估算词元, 续摘要 } from "../06 智能体运行时/对话压缩"
+import { 计划 } from "../10 书库检索/书库布局"
 import type { 对话条 } from "../06 智能体运行时/对话压缩"
 import { 图标 } from "./图标"
 import type { 图标名 } from "./图标"
@@ -121,7 +122,7 @@ export function AI面板(属性: {
   useEffect(() => {
     if (模式 !== "计划" || 章节号 === null) return
     let 还有效 = true
-    const 相对 = "情节/开写包/第" + String(章节号).padStart(3, "0") + "章 开写包.md"
+    const 相对 = 计划.开写包 + "/第" + String(章节号).padStart(3, "0") + "章 开写包.md"
     set计划状态("正在读开写包…")
     void (async () => {
       try {
@@ -537,7 +538,7 @@ export function AI面板(属性: {
               <图标 名="播放" 大小={14} />
               重新生成
             </button>
-            <span className="微信息">会调一次集群；结果落在「情节/开写包」和右侧对话里。</span>
+            <span className="微信息">会调一次集群；结果落在「计划/开写包」和右侧对话里。</span>
           </div>
         </>
       ) : (

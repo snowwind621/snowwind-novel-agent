@@ -1,5 +1,5 @@
 // 只负责一件事：在书库副本上跑一次台账同步，验证改写与提交。
-import { 创建请求处理 } from "../01 应用外壳/请求处理"
+import { 创建请求处理 } from "../../01 应用外壳/请求处理"
 
 const 副本 = process.argv[2]
 const 数据目录 = (process.env.APPDATA ?? "") + "\\snowwind-novel-agent"

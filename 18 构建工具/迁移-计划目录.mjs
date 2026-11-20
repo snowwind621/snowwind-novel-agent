@@ -51,6 +51,17 @@ const 数文件 = (目录) => {
   return 计
 }
 
+/** 自己递归拷：Node 24 的 fs.cpSync 在本机 Windows 上会 0xC0000409 崩掉，别用它。 */
+const 拷目录 = (源, 目标) => {
+  fs.mkdirSync(目标, { recursive: true })
+  for (const 项 of fs.readdirSync(源, { withFileTypes: true })) {
+    const 甲 = path.join(源, 项.name)
+    const 乙 = path.join(目标, 项.name)
+    if (项.isDirectory()) 拷目录(甲, 乙)
+    else fs.copyFileSync(甲, 乙)
+  }
+}
+
 const 是Git = fs.existsSync(path.join(书库, ".git"))
 const 戳 = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)
 const 备份 = path.join(备份根, 戳)
@@ -59,7 +70,7 @@ console.log("书库：" + 书库)
 console.log("是 git 仓库：" + (是Git ? "是（用 git mv）" : "否（退化成 rename，本来也没有历史可保）"))
 const 迁移前文件数 = 数文件(书库)
 fs.mkdirSync(备份根, { recursive: true })
-fs.cpSync(书库, 备份, { recursive: true })
+拷目录(书库, 备份)
 console.log("① 已备份到：" + 备份 + "（" + 数文件(备份) + " 个文件）")
 
 let 移动数 = 0
