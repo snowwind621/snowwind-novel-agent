@@ -50,9 +50,11 @@ export function 三栏布局() {
   const [显示书架, set显示书架] = useState(false)
   const [文件, set文件] = useState<文件内容 | null>(null)
   /** 中栏视图级别：正文编辑 / 全书视图（存本地，重开保持） */
-  const [中栏视图, set中栏视图] = useState<"编辑" | "全书">(() =>
-    localStorage.getItem("中栏视图") === "全书" ? "全书" : "编辑",
-  )
+  const [中栏视图, set中栏视图] = useState<"编辑" | "全书">(() => {
+    // 深链 ?视图=全书 只影响这一次打开，不改用户存下来的偏好
+    if (new URLSearchParams(location.search).get("视图") === "全书") return "全书"
+    return localStorage.getItem("中栏视图") === "全书" ? "全书" : "编辑"
+  })
   const [待裁定, set待裁定] = useState<待裁定章[]>([])
   const [左页, set左页] = useState<左页>(初页)
   const [左宽, set左宽] = useState(() => 读宽度("左栏宽", 300, 220, 460))
