@@ -35,6 +35,23 @@ export interface 派活结果 {
   汇总: string
 }
 
+export interface 书架项 {
+  路径: string
+  书名: string
+  最后打开: string
+}
+
+export interface 改写请求 {
+  请求号: string
+  模型: string
+  章节号: number
+  标题: string
+  原文: string
+  前文: string
+  后文: string
+  指令: string
+}
+
 export interface 续写请求 {
   请求号: string
   模型: string
@@ -61,7 +78,7 @@ export interface 导出结果 {
 
 export interface 对话条目 {
   id: string
-  谁: "你" | "总编" | "集群" | "系统"
+  谁: "你" | "总编" | "集群" | "系统" | "改写"
   文本: string
   明细?: 派活成员结果[]
   进行中?: boolean
@@ -87,10 +104,13 @@ export interface 桥接口 {
   删除成员: (id: string) => Promise<集群成员[]>
   改成员: (id: string, 名称: string, 职责: string, 管辖文本: string) => Promise<集群成员[]>
   续写: (请求: 续写请求) => Promise<{ 已接收: boolean }>
+  改写: (请求: 改写请求) => Promise<{ 已接收: boolean }>
   派活: (任务: string, 章节号: number) => Promise<派活结果>
   监听派活: (回调: (事件: 派活进度) => void) => () => void
   导出: (格式: string) => Promise<导出结果>
   导入旧书库: (旧根: string, 新根: string) => Promise<{ 成功: boolean; 说明: string }>
+  书架: () => Promise<书架项[]>
+  移出书架: (路径: string) => Promise<书架项[]>
   模型清单: () => Promise<string[] | { 错误: string }>
   读取设置: () => Promise<设置>
   保存设置: (设置: 设置) => Promise<设置>

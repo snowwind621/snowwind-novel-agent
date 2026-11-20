@@ -17,8 +17,11 @@ contextBridge.exposeInMainWorld("桥", {
   改成员: (id: string, 名称: string, 职责: string, 管辖文本: string) =>
     ipcRenderer.invoke(通道.集群改, id, 名称, 职责, 管辖文本),
   续写: (请求: unknown) => ipcRenderer.invoke(通道.续写, 请求),
+  改写: (请求: unknown) => ipcRenderer.invoke(通道.改写, 请求),
   导出: (格式: string) => ipcRenderer.invoke(通道.导出, 格式),
   导入旧书库: (旧根: string, 新根: string) => ipcRenderer.invoke(通道.书库导入, 旧根, 新根),
+  书架: () => ipcRenderer.invoke(通道.书架),
+  移出书架: (路径: string) => ipcRenderer.invoke(通道.书架移除, 路径),
   监听派活: (回调: (事件: unknown) => void) => {
     const 处理 = (_事件: unknown, 载荷: unknown) => 回调(载荷)
     ipcRenderer.on(推送事件.派活进度, 处理 as any)

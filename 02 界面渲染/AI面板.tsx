@@ -16,8 +16,9 @@ export function AI面板(属性: {
   设定: 设置 | null
   看板: 看板数据 | null
   追加正文: (文本: string) => void
+  采纳改写: (消息id: string) => void
 }) {
-  const { 消息们, 追加, 改条, 完成, 项目, 章节号, 标题, 正文, 设定, 看板, 追加正文 } = 属性
+  const { 消息们, 追加, 改条, 完成, 项目, 章节号, 标题, 正文, 设定, 看板, 追加正文, 采纳改写 } = 属性
   const [模型, set模型] = useState(设定?.分工.助手 ?? "cnwrokbuddy-ds")
   const [输入, set输入] = useState("")
   const [忙, set忙] = useState(false)
@@ -101,6 +102,11 @@ export function AI面板(属性: {
             {条.谁 === "总编" && !条.进行中 && 条.文本.trim() ? (
               <div style={{ marginTop: 6 }}>
                 <button onClick={() => 追加正文(条.文本)}>插入正文末尾</button>
+              </div>
+            ) : null}
+            {条.谁 === "改写" && !条.进行中 && 条.文本.trim() ? (
+              <div style={{ marginTop: 6, display: "flex", gap: 8 }}>
+                <button onClick={() => 采纳改写(条.id)}>替换原文</button>
               </div>
             ) : null}
             {条.明细 ? (

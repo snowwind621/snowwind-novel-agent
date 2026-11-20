@@ -14,8 +14,11 @@ export const 通道 = {
   集群删除: "集群/删除",
   集群改: "集群/改",
   续写: "ai/续写",
+  改写: "ai/改写",
   导出: "导出/执行",
   书库导入: "书库/导入",
+  书架: "书架/读取",
+  书架移除: "书架/移除",
   模型清单: "模型/清单",
   读取设置: "设置/读取",
   保存设置: "设置/保存",
@@ -27,6 +30,23 @@ export const 推送事件 = {
   对话增量: "ai/增量",
   派活进度: "集群/进度",
 } as const
+
+export interface 书架项 {
+  路径: string
+  书名: string
+  最后打开: string
+}
+
+export interface 改写请求 {
+  请求号: string
+  模型: string
+  章节号: number
+  标题: string
+  原文: string
+  前文: string
+  后文: string
+  指令: string
+}
 
 export interface 续写请求 {
   请求号: string

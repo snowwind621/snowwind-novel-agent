@@ -101,6 +101,25 @@ const 服务 = http.createServer(async (请求, 响应) => {
       return
     }
 
+    if (地址 === "/接口/改写" && 请求.method === "POST") {
+      const 改写请求 = JSON.parse(await 读体(请求))
+      响应.writeHead(200, {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      })
+      const 发 = (类型: string, 文本: string) =>
+        响应.write("data: " + JSON.stringify({ 请求号: 改写请求.请求号, 类型, 文本 }) + "\n\n")
+      try {
+        await 处理器.改写(改写请求, 发 as any)
+        发("结束", "")
+      } catch (错误: any) {
+        发("错误", String(错误?.message ?? 错误))
+      }
+      响应.end()
+      return
+    }
+
     if (地址 === "/接口/派活" && 请求.method === "POST") {
       const { 任务, 章节号 } = JSON.parse(await 读体(请求))
       响应.writeHead(200, {

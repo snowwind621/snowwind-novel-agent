@@ -1,7 +1,7 @@
 // 只负责一件事：拼起三栏，持有全局状态（当前章、看板、集群、对话）。
 import React, { useEffect, useRef, useState } from "react"
 import { 桥, 千字 } from "./接口"
-import type { 项目摘要, 看板数据, 设置, 集群成员, 对话条目 } from "./接口"
+import type { 项目摘要, 看板数据, 设置, 集群成员, 对话条目, 书架项 } from "./接口"
 import { 左栏 } from "./左栏"
 import { 正文编辑 } from "./正文编辑"
 import { AI面板 } from "./AI面板"
@@ -21,9 +21,14 @@ export function 三栏布局() {
   const [成员们, set成员们] = useState<集群成员[]>([])
   const [派活中, set派活中] = useState(false)
   const [显示导出, set显示导出] = useState(false)
+  const [书架, set书架] = useState<书架项[]>([])
+  const [显示书架, set显示书架] = useState(false)
   const 派活占位 = useRef("")
   const 续写请求号 = useRef("")
   const [续写中, set续写中] = useState(false)
+  const 改写请求号 = useRef("")
+  const [改写中, set改写中] = useState(false)
+  const 待替换 = useRef<{ id: string; 起点: number; 终点: number; 原文: string } | null>(null)
   const [消息们, set消息们] = useState<对话条目[]>(() => {
     try {
       const 存过 = localStorage.getItem("对话")
@@ -62,6 +67,24 @@ export function 三栏布局() {
   }, [])
 
   useEffect(() => {
+    const 卸载 = 桥.监听对话((事件) => {
+      if (!事件.请求号.startsWith("改-") || 事件.请求号 !== 改写请求号.current) return
+      const 回条 = 事件.请求号 + "-回"
+      if (事件.类型 === "正文") 改条(回条, 事件.文本)
+      else if (事件.类型 === "结束") {
+        完成(回条)
+        set改写中(false)
+        set状态字("改写好了，看右边那一条")
+      } else if (事件.类型 === "错误") {
+        改条(回条, "\n[出错] " + 事件.文本)
+        完成(回条)
+        set改写中(false)
+      }
+    })
+    return 卸载
+  }, [])
+
+  useEffect(() => {
     const 卸载 = 桥.监听派活((事件) => {
       const id = 派活占位.current
       if (!id) return
@@ -86,6 +109,7 @@ export function 三栏布局() {
   useEffect(() => {
     void (async () => {
       set设定(await 桥.读取设置())
+      set书架(await 桥.书架())
       const 已开 = await 桥.当前项目()
       if (已开) {
         set项目(已开)
@@ -103,22 +127,36 @@ export function 三栏布局() {
     })()
   }, [])
 
-  const 打开书库 = async () => {
-    const 是外壳 = Boolean((window as any).桥)
-    const 路径 = 是外壳 ? "" : window.prompt("输入书库根目录（含 书卷.yaml 的那一层）", 项目?.路径 ?? "") ?? ""
-    if (!是外壳 && !路径.trim()) return
-    const 结果 = await 桥.打开项目(路径)
-    if (!结果) return
+  const 装载进界面 = async (结果: 项目摘要) => {
     set项目(结果)
     set看板(await 桥.读取看板())
     set成员们(await 桥.集群成员())
     set脏(false)
+    set书架(await 桥.书架())
     const 末章 = 结果.统计.最新章节 || 结果.卷[0]?.章节[0]?.编号 || 0
     if (末章) {
       const 读 = await 桥.读取章节(末章)
       set章节号(读.编号)
       set标题(读.标题)
       set正文(读.正文)
+    }
+  }
+
+  const 打开书库 = async () => {
+    const 是外壳 = Boolean((window as any).桥)
+    const 路径 = 是外壳 ? "" : window.prompt("输入书库根目录（含 书卷.yaml 的那一层）", 项目?.路径 ?? "") ?? ""
+    if (!是外壳 && !路径.trim()) return
+    const 结果 = await 桥.打开项目(路径)
+    if (!结果) return
+    await 装载进界面(结果)
+  }
+
+  const 打开指定 = async (路径: string) => {
+    try {
+      const 结果 = await 桥.打开项目(路径)
+      if (结果) await 装载进界面(结果)
+    } catch (错误: any) {
+      set状态字("打不开这本书：" + String(错误?.message ?? 错误))
     }
   }
 
@@ -202,6 +240,42 @@ export function 三栏布局() {
     }
   }
 
+  const 发起改写 = async (参数: { 原文: string; 起点: number; 终点: number; 指令: string }) => {
+    if (章节号 === null || 改写中) return
+    const 请求号 = "改-" + Date.now()
+    const 回条 = 请求号 + "-回"
+    改写请求号.current = 请求号
+    待替换.current = { id: 回条, 起点: 参数.起点, 终点: 参数.终点, 原文: 参数.原文 }
+    set改写中(true)
+    set状态字("正在改写…")
+    追加({ id: 请求号 + "-我", 谁: "你", 文本: "（改写）" + (参数.指令 || "让它更紧、更具体") + "\n原文：" + 参数.原文.slice(0, 80) + "…" })
+    追加({ id: 回条, 谁: "改写", 文本: "", 进行中: true })
+    try {
+      await 桥.改写({
+        请求号,
+        模型: 设定?.分工.执笔 ?? "",
+        章节号,
+        标题,
+        原文: 参数.原文,
+        前文: 正文.slice(Math.max(0, 参数.起点 - 600), 参数.起点),
+        后文: 正文.slice(参数.终点, 参数.终点 + 600),
+        指令: 参数.指令,
+      })
+    } catch (错误: any) {
+      set改写中(false)
+      set状态字("改写失败：" + String(错误?.message ?? 错误))
+    }
+  }
+
+  const 采纳改写 = (消息id: string) => {
+    const 目标 = 待替换.current
+    const 新文 = 消息们.find((条) => 条.id === 消息id)?.文本 ?? ""
+    if (!目标 || 目标.id !== 消息id || !新文.trim()) return
+    set正文((旧) => 旧.slice(0, 目标.起点) + 新文 + 旧.slice(目标.终点))
+    set脏(true)
+    set状态字("已替换为改写版，记得保存")
+  }
+
   const 停止续写 = async () => {
     if (!续写请求号.current) return
     await 桥.中止对话(续写请求号.current)
@@ -275,7 +349,37 @@ export function 三栏布局() {
             ) : null}
           </div>
           <button onClick={() => set显示设置(true)}>设置</button>
-          <button onClick={打开书库}>打开书库</button>
+          <div style={{ position: "relative" }}>
+            <button onClick={() => set显示书架((旧) => !旧)}>打开书库 ▾</button>
+            {显示书架 ? (
+              <div className="菜单" style={{ minWidth: 240 }}>
+                {书架.length === 0 ? <div className="菜单项" style={{ color: "var(--字弱)" }}>还没有打开过书</div> : null}
+                {书架.map((项) => (
+                  <div
+                    key={项.路径}
+                    className="菜单项"
+                    title={项.路径}
+                    onClick={() => {
+                      set显示书架(false)
+                      void 打开指定(项.路径)
+                    }}
+                  >
+                    {项.书名}
+                  </div>
+                ))}
+                <div
+                  className="菜单项"
+                  style={{ borderTop: "1px solid var(--线)", marginTop: 4, paddingTop: 8 }}
+                  onClick={() => {
+                    set显示书架(false)
+                    void 打开书库()
+                  }}
+                >
+                  选择其他目录…
+                </div>
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -307,6 +411,8 @@ export function 三栏布局() {
           续写={续写}
           停止续写={停止续写}
           续写中={续写中}
+          改写={发起改写}
+          改写中={改写中}
           状态字={状态字}
         />
         <div className="右栏">
@@ -322,6 +428,7 @@ export function 三栏布局() {
             设定={设定}
             看板={看板}
             追加正文={追加正文}
+            采纳改写={采纳改写}
           />
         </div>
       </div>

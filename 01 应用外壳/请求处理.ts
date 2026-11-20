@@ -1,7 +1,7 @@
 // 只负责一件事：实现每个通道背后的业务。主进程与浏览器预览共用这一份，杜绝两套逻辑。
 import path from "node:path"
 import { 通道 } from "../03 进程桥接/通道"
-import type { 项目摘要, 看板数据, 设置, 对话请求, 续写请求 } from "../03 进程桥接/通道"
+import type { 项目摘要, 看板数据, 设置, 对话请求, 续写请求, 改写请求, 书架项 } from "../03 进程桥接/通道"
 import { 扫描项目 } from "../10 书库检索/项目扫描"
 import { 装配看板 } from "../10 书库检索/看板装配"
 import { 读文本, 原子写文本, 存在 } from "../11 文件工作区/原子写"
@@ -22,6 +22,27 @@ import fs from "node:fs"
 
 export type 通道处理 = Record<string, (...参数: any[]) => Promise<any>>
 
+function 读书架(数据目录: string): 书架项[] {
+  try {
+    const 全部 = JSON.parse(fs.readFileSync(path.join(数据目录, "书架.json"), "utf8"))
+    return Array.isArray(全部) ? (全部 as 书架项[]) : []
+  } catch {
+    return []
+  }
+}
+
+function 写书架(数据目录: string, 项们: 书架项[]): 书架项[] {
+  fs.mkdirSync(数据目录, { recursive: true })
+  const 裁剪 = 项们.slice(0, 12)
+  fs.writeFileSync(path.join(数据目录, "书架.json"), JSON.stringify(裁剪, null, 2), "utf8")
+  return 裁剪
+}
+
+function 记书架(数据目录: string, 项目: 项目摘要): void {
+  const 旧 = 读书架(数据目录).filter((项) => 项.路径 !== 项目.路径)
+  写书架(数据目录, [{ 路径: 项目.路径, 书名: 项目.书名, 最后打开: new Date().toISOString() }, ...旧])
+}
+
 export interface 处理器集 {
   状态: { 项目: 项目摘要 | null; 看板: 看板数据 | null }
   处理: 通道处理
@@ -30,6 +51,7 @@ export interface 处理器集 {
   派活: (任务: string, 编号: number, 回调?: (事件: any) => void) => Promise<any>
   取集群: () => Promise<集群成员[]>
   续写: (请求: 续写请求, 回调: (类型: "思考" | "正文", 文本: string) => void) => Promise<string>
+  改写: (请求: 改写请求, 回调: (类型: "思考" | "正文", 文本: string) => void) => Promise<string>
 }
 
 export function 创建请求处理(
@@ -45,6 +67,7 @@ export function 创建请求处理(
     状态.项目 = 项目
     状态.看板 = await 装配看板(根, 项目.统计.最新章节)
     写设置(数据目录, { ...读设置(数据目录), 项目路径: 根 })
+    记书架(数据目录, 项目)
     return 项目
   }
 
@@ -215,6 +238,12 @@ export function 创建请求处理(
       }
     },
 
+    [通道.书架]: async (): Promise<书架项[]> =>
+      读书架(数据目录).filter((项) => fs.existsSync(path.join(项.路径, 路径.清单))),
+
+    [通道.书架移除]: async (书路径: string): Promise<书架项[]> =>
+      写书架(数据目录, 读书架(数据目录).filter((项) => 项.路径 !== 书路径)),
+
     [通道.模型清单]: async () => {
       const 设置 = 读设置(数据目录)
       try {
@@ -267,6 +296,51 @@ export function 创建请求处理(
     return 成员们
   }
 
+  /** 改写：给一段原文 + 一句意见，只回改写后的正文。多轮就是拿上一版再改一次。 */
+  async function 改写流(请求: 改写请求, 回调: (类型: "思考" | "正文", 文本: string) => void) {
+    const 设置 = 读设置(数据目录)
+    const 系统 = [
+      "你是《" + (状态.项目?.书名 ?? "未命名作品") + "》的执笔，正在改第 " + 请求.章节号 + " 章《" + 请求.标题 + "》。",
+      "",
+      "任务：按作者的修改意见重写给定片段。",
+      "铁律：",
+      "1. 只输出改写后的正文本身——不要解释、不要评价、不要用引号或代码块包起来。",
+      "2. 保持原文的篇幅量级与叙事视角，除非作者明确要求改动。",
+      "3. 段落用两个全角空格开头，对话用中文引号。",
+      "4. 事实以原文为准，不要新增设定、不要补人名地名。",
+    ].join("\n")
+
+    const 用户 = [
+      "【要改的原文】",
+      请求.原文,
+      "",
+      请求.前文 ? "【上文（只用于衔接，不要改写）】\n" + 请求.前文.slice(-600) : "",
+      请求.后文 ? "【下文（只用于衔接，不要改写）】\n" + 请求.后文.slice(0, 600) : "",
+      "",
+      "【作者意见】" + (请求.指令 || "让它更紧、更具体，删掉多余的解释。"),
+    ].filter(Boolean).join("\n")
+
+    const 控制器 = new AbortController()
+    进行中.set(请求.请求号, 控制器)
+    try {
+      return await 流式对话({
+        基址: 设置.网关地址,
+        密钥: 设置.API密钥,
+        模型: 请求.模型 || 设置.分工.执笔,
+        消息: [
+          { role: "system", content: 系统 },
+          { role: "user", content: 用户 },
+        ],
+        温度: 0.85,
+        最大词元: 8000,
+        信号: 控制器.signal,
+        回调,
+      })
+    } finally {
+      进行中.delete(请求.请求号)
+    }
+  }
+
   async function 续写流(请求: 续写请求, 回调: (类型: "思考" | "正文", 文本: string) => void) {
     const 设置 = 读设置(数据目录)
     const 系统 = [
@@ -304,7 +378,25 @@ export function 创建请求处理(
     }
   }
 
-  /** 派活结果归档：追加到讨论区，留痕可追溯，但不作写作依据。 */
+  /** 开写包落盘：每章一份，覆盖更新，属于「情节」，可以当依据用。 */
+  async function 落开写包(章号: number, 标题: string, 任务: string, 结果: any): Promise<string> {
+    const 相对 = "情节/开写包/第" + String(章号).padStart(3, "0") + "章 开写包.md"
+    const 文件 = path.join(状态.项目!.路径, 相对)
+    fs.mkdirSync(path.dirname(文件), { recursive: true })
+    const 正文 = [
+      "# 第 " + 章号 + " 章《" + 标题 + "》· 开写包",
+      "",
+      "> 由智能体集群生成于 " + new Date().toLocaleString("zh-CN") + "，任务：" + 任务,
+      "> 本章最新一版，重跑会覆盖。原始回答见讨论区。",
+      "",
+      String(结果.汇总 ?? "").trim(),
+      "",
+    ].join("\n")
+    fs.writeFileSync(文件, 正文, "utf8")
+    return 相对
+  }
+
+  /** 派活结果归档：讨论区留全过程，情节区留可用的开写包。 */
   async function 归档派活(任务: string, 章号: number, 标题: string, 结果: any) {
     if (!状态.项目) return
     const 相对 = 派活归档
@@ -332,7 +424,8 @@ export function 创建请求处理(
     )
     fs.mkdirSync(path.dirname(文件), { recursive: true })
     fs.appendFileSync(文件, (已有 ? "\n" : "") + 段.join("\n"), "utf8")
-    await 提交(状态.项目.路径, "派活归档 ch" + 章号, [相对])
+    const 开写包路径 = await 落开写包(章号, 标题, 任务, 结果)
+    await 提交(状态.项目.路径, "派活归档 + 开写包 ch" + 章号, [相对, 开写包路径])
   }
 
   async function 派活流(任务: string, 编号: number, 回调?: (事件: any) => void) {
@@ -373,6 +466,7 @@ export function 创建请求处理(
     派活: 派活流,
     取集群,
     续写: 续写流,
+    改写: 改写流,
     中止: (请求号: string) => {
       const 控制器 = 进行中.get(请求号)
       if (!控制器) return false

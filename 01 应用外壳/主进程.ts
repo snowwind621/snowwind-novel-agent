@@ -3,7 +3,7 @@ import { app, BrowserWindow, dialog, ipcMain } from "electron"
 import path from "node:path"
 import fs from "node:fs"
 import { 通道, 推送事件 } from "../03 进程桥接/通道"
-import type { 对话请求, 续写请求 } from "../03 进程桥接/通道"
+import type { 对话请求, 续写请求, 改写请求 } from "../03 进程桥接/通道"
 import { 创建请求处理 } from "./请求处理"
 
 /** 启动诊断：出问题时先看 userData/诊断.log，而不是猜。 */
@@ -88,6 +88,20 @@ app.whenReady().then(async () => {
         事件.sender.send(推送事件.对话增量, { 请求号: 请求.请求号, 类型, 文本 })
       try {
         await 处理器.续写(请求, 发)
+        事件.sender.send(推送事件.对话增量, { 请求号: 请求.请求号, 类型: "结束", 文本: "" })
+      } catch (错误: any) {
+        事件.sender.send(推送事件.对话增量, { 请求号: 请求.请求号, 类型: "错误", 文本: String(错误?.message ?? 错误) })
+      }
+    })()
+    return { 已接收: true }
+  })
+
+  ipcMain.handle(通道.改写, async (事件, 请求: 改写请求) => {
+    void (async () => {
+      const 发 = (类型: "思考" | "正文", 文本: string) =>
+        事件.sender.send(推送事件.对话增量, { 请求号: 请求.请求号, 类型, 文本 })
+      try {
+        await 处理器.改写(请求, 发)
         事件.sender.send(推送事件.对话增量, { 请求号: 请求.请求号, 类型: "结束", 文本: "" })
       } catch (错误: any) {
         事件.sender.send(推送事件.对话增量, { 请求号: 请求.请求号, 类型: "错误", 文本: String(错误?.message ?? 错误) })
