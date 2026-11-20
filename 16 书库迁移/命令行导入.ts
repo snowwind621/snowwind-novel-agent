@@ -5,7 +5,7 @@ const 旧根 = process.argv[2]
 const 新根 = process.argv[3]
 
 if (!旧根 || !新根) {
-  console.error("用法：node dist/导入.cjs <旧书库目录> <新书库目录>")
+  console.error("用法：node 99 构建产物/导入.cjs <旧书库目录> <新书库目录>")
   process.exit(1)
 }
 

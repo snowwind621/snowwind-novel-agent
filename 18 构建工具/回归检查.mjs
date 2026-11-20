@@ -1,7 +1,7 @@
 // 只负责一件事：一条命令跑完全部不依赖模型的回归自检，核心逻辑被改坏时立刻报警。
-// 用法：node 脚本/回归检查.mjs
+// 用法：node 18 构建工具/回归检查.mjs
 //   · 全部通过 → 退出码 0；有任何失败 → 退出码 1
-//   · 不联网、不调用模型、不碰真实书库，只在 dist/回归样本 里现造一本样例书库
+//   · 不联网、不调用模型、不碰真实书库，只在 99 构建产物/回归样本 里现造一本样例书库
 
 import { build } from "esbuild"
 import fs from "node:fs/promises"
@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url"
 import { createRequire } from "node:module"
 
 const 根目录 = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
-const 样本根 = path.join(根目录, "dist", "回归样本")
+const 样本根 = path.join(根目录, "99 构建产物", "回归样本")
 const 书库根 = path.join(样本根, "样本书库")
 const 空库根 = path.join(样本根, "空书库")
 
@@ -155,7 +155,7 @@ function 读ZIP(数据) {
   return { 本地头签名: 数据.readUInt32LE(0) === 0x04034b50, 条目们 }
 }
 
-// ────────────────────────── 造样例书库（只写 dist/回归样本） ──────────────────────────
+// ────────────────────────── 造样例书库（只写 99 构建产物/回归样本） ──────────────────────────
 
 const 台账正文 = [
   "# 承诺台账",
@@ -673,7 +673,7 @@ async function 跑扫描(扫描) {
 
 async function 主() {
   console.log("雪风小说工坊 · 离线回归自检")
-  console.log("用法：node 脚本/回归检查.mjs（全部通过退出码 0，有失败退出码 1）")
+  console.log("用法：node 18 构建工具/回归检查.mjs（全部通过退出码 0，有失败退出码 1）")
 
   let 内核
   try {
@@ -700,7 +700,7 @@ async function 主() {
   console.log("")
   console.log("──────── 汇总 ────────")
   console.log("共 " + 总数 + " 条：通过 " + 记账.通过 + "，失败 " + 记账.失败 + "，耗时 " + Math.round(记账.毫秒) + "ms")
-  console.log("样例书库：dist/回归样本/样本书库（可随时删掉，重跑会重建）")
+  console.log("样例书库：99 构建产物/回归样本/样本书库（可随时删掉，重跑会重建）")
 
   if (记账.失败 > 0) {
     console.log("")

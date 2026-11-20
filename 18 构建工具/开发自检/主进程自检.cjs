@@ -32,7 +32,7 @@ Module._load = function (请求, 父模块, 是否主) {
   return 原始加载.apply(this, arguments)
 }
 
-require(path.join(process.cwd(), "dist", "main.cjs"))
+require(path.join(process.cwd(), "99 构建产物", "main.cjs"))
 
 const 书库 = process.argv[2]
 

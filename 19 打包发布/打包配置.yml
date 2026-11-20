@@ -4,16 +4,16 @@ appId: com.snowwind.novel-agent
 productName: 雪风小说工坊
 
 directories:
-  output: dist/发布
+  output: 99 构建产物/发布
 
 # 只把跑起来真正需要的三样塞进 app.asar：主进程、预加载、界面产物。
-# 不写死 dist/**，否则 dist 里的截图、自检脚本会被一起打进去，白胖几十兆。
+# 不写死 99 构建产物/**，否则 dist 里的截图、自检脚本会被一起打进去，白胖几十兆。
 # dependencies（react/react-dom）由 electron-builder 自动带上，devDependencies 一个不带。
 files:
   - package.json
-  - dist/main.cjs
-  - dist/preload.cjs
-  - dist/renderer/**
+  - 99 构建产物/main.cjs
+  - 99 构建产物/preload.cjs
+  - 99 构建产物/renderer/**
 
 asar: true
 
@@ -22,7 +22,7 @@ electronDist: node_modules/electron/dist
 
 # 源 package.json 里没有 author，NSIS 的版本信息需要它；只改包内的元数据，不动仓库里的文件。
 extraMetadata:
-  main: dist/main.cjs
+  main: 99 构建产物/main.cjs
   author: 雪风
 
 win:

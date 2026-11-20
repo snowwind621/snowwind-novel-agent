@@ -1,11 +1,11 @@
-// 只负责一件事：调 electron-builder 把 dist 打成 Windows 便携 exe，并报出产物路径与体积。
+// 只负责一件事：调 electron-builder 把「99 构建产物」打成 Windows 便携 exe，并报出产物路径与体积。
 import { spawnSync } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 const 根 = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
-const 产物目录 = path.join(根, "dist", "发布")
+const 产物目录 = path.join(根, "99 构建产物", "发布")
 
 function 读包(名) {
   const 文件 = path.join(根, "node_modules", 名, "package.json")
@@ -18,8 +18,8 @@ if (!构建器) {
   console.error("❌ 没找到 electron-builder。先跑 npm install（它已写进 devDependencies）。")
   process.exit(1)
 }
-if (!fs.existsSync(path.join(根, "dist", "main.cjs"))) {
-  console.error("❌ dist/main.cjs 不存在。先跑 npm run build（npm run 打包 会自动做这一步）。")
+if (!fs.existsSync(path.join(根, "99 构建产物", "main.cjs"))) {
+  console.error("❌ 99 构建产物/main.cjs 不存在。先跑 npm run build（npm run 打包 会自动做这一步）。")
   process.exit(1)
 }
 
@@ -29,14 +29,14 @@ const 入口 = path.join(根, "node_modules", "electron-builder", 用的入口)
 console.log("[打包] 正在产出 Windows 便携 exe，第一次会下载 NSIS 与签名工具，耐心等…")
 // 缓存与临时目录都跟着 dist 走，不往系统目录里撒：清 dist 就是彻底清干净；
 // 系统临时目录被限权/空间不够时，makensis 会报 "error creating mmap"，用自己的临时目录最省事。
-const 结果 = spawnSync(process.execPath, [入口, "--win", "portable", "--config", path.join("打包", "打包配置.yml")], {
+const 结果 = spawnSync(process.execPath, [入口, "--win", "portable", "--config", path.join(根, "19 打包发布", "打包配置.yml")], {
   cwd: 根,
   stdio: "inherit",
   env: {
     ...process.env,
-    ELECTRON_BUILDER_CACHE: path.join(根, "dist", "eb-cache"),
-    TMP: path.join(根, "dist", "tmp"),
-    TEMP: path.join(根, "dist", "tmp"),
+    ELECTRON_BUILDER_CACHE: path.join(根, "99 构建产物", "eb-cache"),
+    TMP: path.join(根, "99 构建产物", "tmp"),
+    TEMP: path.join(根, "99 构建产物", "tmp"),
   },
 })
 if (结果.status !== 0) {

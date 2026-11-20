@@ -17,7 +17,7 @@ const 假electron = {
 }
 const 原始 = Module._load
 Module._load = function (请求) { if (请求 === "electron") return 假electron; return 原始.apply(this, arguments) }
-require(path.join(process.cwd(), "dist", "main.cjs"))
+require(path.join(process.cwd(), "99 构建产物", "main.cjs"))
 
 const 副本 = process.argv[2]
 

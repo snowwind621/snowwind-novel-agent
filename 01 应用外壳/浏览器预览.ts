@@ -9,7 +9,7 @@ import type { 对话请求 } from "../03 进程桥接/通道"
 
 const 端口 = Number(process.env.预览端口 ?? "5178")
 const 数据目录 = path.join(os.homedir(), ".雪风小说工坊")
-const 静态根 = path.join(process.cwd(), "dist", "renderer")
+const 静态根 = path.join(process.cwd(), "99 构建产物", "renderer")
 const 处理器 = 创建请求处理(
   数据目录,
   async () => 命令行书库(),
