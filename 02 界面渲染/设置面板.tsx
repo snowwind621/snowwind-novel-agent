@@ -94,9 +94,29 @@ export function 设置面板(属性: {
     }
   }
 
+  const 有改动 = JSON.stringify(草稿) !== JSON.stringify(属性.设定)
+  const [存中, set存中] = useState(false)
+
+  /** 应用 = 立刻写盘并生效，但不关弹窗；保存 = 写盘并关闭。 */
+  const 写盘 = async (): Promise<boolean> => {
+    set存中(true)
+    try {
+      const 已存 = await 桥.保存设置(草稿)
+      属性.存好(已存)
+      return true
+    } catch {
+      return false
+    } finally {
+      set存中(false)
+    }
+  }
+
+  const 应用 = async () => {
+    await 写盘()
+  }
+
   const 存 = async () => {
-    const 已存 = await 桥.保存设置(草稿)
-    属性.存好(已存)
+    if (await 写盘()) 属性.关闭()
   }
 
   const 恢复默认 = () => {
@@ -164,8 +184,14 @@ export function 设置面板(属性: {
           <button className="恢复默认" onClick={恢复默认}>
             恢复默认
           </button>
-          <button onClick={属性.关闭}>取消</button>
-          <button onClick={存}>保存</button>
+          <span className={"改动提示" + (有改动 ? " 有" : "")}>{有改动 ? "有改动，记得应用或保存" : "没有改动"}</span>
+          <button onClick={属性.关闭} title="丢弃这次改动">取消</button>
+          <button onClick={() => void 应用()} disabled={!有改动 || 存中} title="写盘并生效，但不关这个窗口">
+            {存中 ? "写入中…" : "应用"}
+          </button>
+          <button onClick={() => void 存()} disabled={!有改动 || 存中} title="写盘并关闭窗口">
+            保存
+          </button>
         </div>
       </div>
     </div>

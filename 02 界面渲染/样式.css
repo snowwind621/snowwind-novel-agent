@@ -1030,12 +1030,121 @@ body.拖宽中 { cursor: col-resize; user-select: none; }
 .设置分组说明 { margin-left: auto; color: var(--字弱); font-size: 11px; font-weight: 400; }
 .勾选行 { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 4px; }
 
-/* 正文行宽 / 减少动态：设置页写 CSS 变量，这里只是消费 */
-.编辑器-正文区 { max-width: var(--正文行宽, 780px); margin-left: auto; margin-right: auto; width: 100%; }
+/* 正文行宽 / 减少动态：设置页写 CSS 变量，这里只是消费（最大行宽挂在 .编辑器-纸面上） */
 [data-减少动态="是"] *,
 [data-减少动态="是"] *::before,
 [data-减少动态="是"] *::after {
   transition: none !important;
   animation: none !important;
 }
+
+/* —— 滚动条：贴住各自容器的右边缘，细条 10px —— */
+.左栏体,
+.面板体,
+.数据体,
+.数据导航,
+.设置内容,
+.流,
+.编辑器-正文区,
+.图滚,
+.标签行 {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--线强) transparent;
+}
+.左栏体::-webkit-scrollbar,
+.面板体::-webkit-scrollbar,
+.数据体::-webkit-scrollbar,
+.数据导航::-webkit-scrollbar,
+.设置内容::-webkit-scrollbar,
+.流::-webkit-scrollbar,
+.编辑器-正文区::-webkit-scrollbar,
+.图滚::-webkit-scrollbar,
+.标签行::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.左栏体::-webkit-scrollbar-track,
+.面板体::-webkit-scrollbar-track,
+.数据体::-webkit-scrollbar-track,
+.数据导航::-webkit-scrollbar-track,
+.设置内容::-webkit-scrollbar-track,
+.流::-webkit-scrollbar-track,
+.编辑器-正文区::-webkit-scrollbar-track,
+.图滚::-webkit-scrollbar-track,
+.标签行::-webkit-scrollbar-track {
+  background: transparent;
+}
+.左栏体::-webkit-scrollbar-thumb,
+.面板体::-webkit-scrollbar-thumb,
+.数据体::-webkit-scrollbar-thumb,
+.数据导航::-webkit-scrollbar-thumb,
+.设置内容::-webkit-scrollbar-thumb,
+.流::-webkit-scrollbar-thumb,
+.编辑器-正文区::-webkit-scrollbar-thumb,
+.图滚::-webkit-scrollbar-thumb,
+.标签行::-webkit-scrollbar-thumb {
+  background: var(--线强);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.左栏体::-webkit-scrollbar-thumb:hover,
+.面板体::-webkit-scrollbar-thumb:hover,
+.数据体::-webkit-scrollbar-thumb:hover,
+.数据导航::-webkit-scrollbar-thumb:hover,
+.设置内容::-webkit-scrollbar-thumb:hover,
+.流::-webkit-scrollbar-thumb:hover,
+.编辑器-正文区::-webkit-scrollbar-thumb:hover,
+.图滚::-webkit-scrollbar-thumb:hover,
+.标签行::-webkit-scrollbar-thumb:hover {
+  background: var(--主);
+  background-clip: content-box;
+}
+
+/* 滚动条贴边：滚动容器不留右侧内边距，改为内层内容留白 */
+.数据体 { padding-right: 0; }
+.数据体 > .数据块, .数据体 > .游标行, .数据体 > .空态 { margin-right: 20px; }
+.设置内容 { padding-right: 0; }
+.设置内容 > * { margin-right: 18px; }
+.面板体 { padding-right: 0; }
+.面板体 > * { margin-right: 12px; }
+.流 { padding-right: 0; }
+.流 > * { margin-right: 12px; }
+.图滚 { padding-right: 0; }
+
+/* 正文纸面：滚动容器铺满中栏，最大行宽给内层 */
+.编辑器-正文区 { padding: 0; }
+.编辑器-纸面 {
+  width: 100%;
+  max-width: var(--正文行宽, 780px);
+  margin: 0 auto;
+  padding: 26px 40px 80px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* —— 设置：无极滑块与分段枚举 —— */
+.滑块行 { display: flex; align-items: center; gap: 10px; }
+.滑块 {
+  flex: 1 1 auto;
+  min-width: 120px;
+  height: 18px;
+  accent-color: var(--主);
+  cursor: pointer;
+}
+.滑数值 {
+  flex: 0 0 auto;
+  min-width: 52px;
+  text-align: right;
+  color: var(--字);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.滑数单位 { color: var(--字弱); font-size: 11px; margin-left: 2px; }
+.设置分段 { flex-wrap: wrap; }
+.改动提示 { margin-left: auto; color: var(--字弱); font-size: 11.5px; }
+.改动提示.有 { color: var(--警); }
 

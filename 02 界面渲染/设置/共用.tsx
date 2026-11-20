@@ -1,4 +1,4 @@
-// 只负责一件事：设置页共用的小控件（分组标题、数字项、开关项、选择项、文本项）。
+// 只负责一件事：设置页共用的小控件（分组标题、滑块数字项、开关、分段枚举、文本框）。
 import React from "react"
 
 export function 分组标题(属性: { 文: string; 说明?: string }) {
@@ -10,6 +10,7 @@ export function 分组标题(属性: { 文: string; 说明?: string }) {
   )
 }
 
+/** 无极调整：滑块拖动只改草稿，右侧同步显示数值。 */
 export function 数字项(属性: {
   标签: string
   说明: string
@@ -19,27 +20,29 @@ export function 数字项(属性: {
   最大: number
   步进?: number
   单位?: string
+  小数?: number
 }) {
-  const 取数 = (文本: string): number => {
-    const 数 = Number(文本)
-    return Number.isFinite(数) ? 数 : 属性.值
-  }
+  const 位 = 属性.小数 ?? (属性.步进 && 属性.步进 < 1 ? 2 : 0)
+  const 显示 = 属性.值.toFixed(位)
   return (
     <div className="设置项">
       <label>{属性.标签}</label>
-      <input
-        className="数字框"
-        type="number"
-        min={属性.最小}
-        max={属性.最大}
-        step={属性.步进 ?? 1}
-        value={String(属性.值)}
-        onChange={(事件) => 属性.改(取数(事件.target.value))}
-        onBlur={(事件) => {
-          const 数 = Math.min(属性.最大, Math.max(属性.最小, 取数(事件.target.value)))
-          if (数 !== 属性.值) 属性.改(数)
-        }}
-      />
+      <div className="滑块行">
+        <input
+          className="滑块"
+          type="range"
+          min={属性.最小}
+          max={属性.最大}
+          step={属性.步进 ?? 0.01}
+          value={属性.值}
+          onChange={(事件) => 属性.改(Number(事件.target.value))}
+          title={属性.说明}
+        />
+        <span className="滑数值">
+          {显示}
+          {属性.单位 ? <span className="滑数单位">{属性.单位}</span> : null}
+        </span>
+      </div>
       <div className="设置说明">
         {属性.说明}（{属性.最小}–{属性.最大}{属性.单位 ? " " + 属性.单位 : ""}）
       </div>
@@ -51,7 +54,7 @@ export function 开关项(属性: { 标签: string; 说明: string; 值: boolean
   return (
     <div className="设置项">
       <label className="开关行">
-        <input type="checkbox" checked={属性.值} onChange={(事件) => 属性.改(事件.target.checked)} />
+        <input type="checkbox" className="开关" checked={属性.值} onChange={(事件) => 属性.改(事件.target.checked)} />
         {属性.标签}
       </label>
       <div className="设置说明">{属性.说明}</div>
@@ -69,13 +72,18 @@ export function 选择项<T extends string>(属性: {
   return (
     <div className="设置项">
       <label>{属性.标签}</label>
-      <select value={属性.值} onChange={(事件) => 属性.改(事件.target.value as T)}>
+      <div className="分段 设置分段">
         {属性.选项.map((项) => (
-          <option key={项.值} value={项.值}>
+          <button
+            key={项.值}
+            className={"分段按钮" + (属性.值 === 项.值 ? " 选中" : "")}
+            onClick={() => 属性.改(项.值)}
+            title={项.字}
+          >
             {项.字}
-          </option>
+          </button>
         ))}
-      </select>
+      </div>
       <div className="设置说明">{属性.说明}</div>
     </div>
   )

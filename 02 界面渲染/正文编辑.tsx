@@ -526,6 +526,7 @@ export function 正文编辑(属性: {
       </div>
 
       <div className="编辑器-正文区">
+        <div className="编辑器-纸面">
         <h1 className="编辑器-标题块">{标题}</h1>
         <div
           ref={富}
@@ -551,6 +552,7 @@ export function 正文编辑(属性: {
             排提交()
           }}
         />
+        </div>
       </div>
     </div>
   )

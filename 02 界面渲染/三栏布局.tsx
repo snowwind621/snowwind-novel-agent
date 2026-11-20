@@ -70,8 +70,8 @@ export function 三栏布局() {
   })
   const [待裁定, set待裁定] = useState<待裁定章[]>([])
   const [左页, set左页] = useState<左页>(初页)
-  const [左宽, set左宽] = useState(() => 读宽度("左栏宽", 300, 220, 460))
-  const [右宽, set右宽] = useState(() => 读宽度("右栏宽", 420, 320, 640))
+  const [左宽, set左宽] = useState(() => 读宽度("左栏宽", 300, 180, 600))
+  const [右宽, set右宽] = useState(() => 读宽度("右栏宽", 420, 280, 900))
   const [拖侧, set拖侧] = useState<"左" | "右" | null>(null)
   const [台账同步中, set台账同步中] = useState(false)
   const 拖拽 = useRef<{ 侧: "左" | "右"; 起X: number; 起宽: number } | null>(null)
@@ -108,6 +108,12 @@ export function 三栏布局() {
   const 套用外观 = (外观: 外观设置) => {
     应用外观(外观)
     set实主题(解析主题(外观.主题))
+    // 圆角 / 正文行宽 / 减少动态：设置页写值，这里全局套用（重开也生效）
+    const 根 = document.documentElement
+    根.style.setProperty("--卡圆角", 外观.圆角 + "px")
+    根.style.setProperty("--正文行宽", 外观.行宽 === "窄" ? "620px" : 外观.行宽 === "宽" ? "980px" : "780px")
+    if (外观.减少动态) 根.dataset.减少动态 = "是"
+    else delete 根.dataset.减少动态
   }
 
   /** 顶栏日/夜按钮：等价于改设置里的主题，两处永远同一份状态。 */
@@ -142,6 +148,21 @@ export function 三栏布局() {
     }
   }, [中栏视图])
 
+  // 窗口变窄放不下时按比例压缩（中栏保底 420），避免出现横向滚动条。
+  useEffect(() => {
+    const 压 = () => {
+      const 可用 = window.innerWidth - 12 - 420
+      const 总 = 左宽 + 右宽
+      if (总 <= 可用) return
+      const 比 = 可用 / 总
+      set左宽((旧) => Math.max(180, Math.round(旧 * 比)))
+      set右宽((旧) => Math.max(280, Math.round(旧 * 比)))
+    }
+    压()
+    window.addEventListener("resize", 压)
+    return () => window.removeEventListener("resize", 压)
+  }, [])
+
   // 宽度落 localStorage：重开保持上次拖到的位置。
   useEffect(() => {
     localStorage.setItem("左栏宽", String(左宽))
@@ -159,14 +180,23 @@ export function 三栏布局() {
       // 界面缩放会把鼠标位移放大：除回去，拖到的位置才跟手
       const 缩放 = Number(getComputedStyle(document.documentElement).zoom) || 1
       const 差 = (事件.clientX - 记.起X) / 缩放
-      if (记.侧 === "左") set左宽(夹住(记.起宽 + 差, 220, 460))
-      else set右宽(夹住(记.起宽 - 差, 320, 640))
+      // 边界外给阻尼：拖过头只走 30%，最多再超出 48px，松手回弹到硬边界
+      const 带阻尼 = (目标: number, 下限: number, 上限: number): number => {
+        if (目标 < 下限) return Math.max(下限 - 48, 下限 - (下限 - 目标) * 0.3)
+        if (目标 > 上限) return Math.min(上限 + 48, 上限 + (目标 - 上限) * 0.3)
+        return 目标
+      }
+      if (记.侧 === "左") set左宽(Math.round(带阻尼(记.起宽 + 差, 180, 600)))
+      else set右宽(Math.round(带阻尼(记.起宽 - 差, 280, 900)))
     }
     const 松开 = () => {
       if (!拖拽.current) return
       拖拽.current = null
       set拖侧(null)
       document.body.classList.remove("拖宽中")
+      // 回弹：把拖过头的值夹回硬边界
+      set左宽((旧) => 夹住(旧, 180, 600))
+      set右宽((旧) => 夹住(旧, 280, 900))
     }
     window.addEventListener("pointermove", 移动)
     window.addEventListener("pointerup", 松开)
@@ -217,6 +247,14 @@ export function 三栏布局() {
           : 已存设置
       set设定(生效设置)
       应用外观(生效设置.外观, 链接主题 !== "亮" && 链接主题 !== "暗")
+      // 圆角 / 正文行宽 / 减少动态：开窗和保存后都要套用，别只靠设置页
+      {
+        const 根 = document.documentElement
+        根.style.setProperty("--卡圆角", 生效设置.外观.圆角 + "px")
+        根.style.setProperty("--正文行宽", 生效设置.外观.行宽 === "窄" ? "620px" : 生效设置.外观.行宽 === "宽" ? "980px" : "780px")
+        if (生效设置.外观.减少动态) 根.dataset.减少动态 = "是"
+        else delete 根.dataset.减少动态
+      }
       set实主题(解析主题(生效设置.外观.主题))
       set书架(await 桥.书架())
       const 已开 = await 桥.当前项目()
@@ -571,7 +609,7 @@ export function 三栏布局() {
 
       <div
         className="主体"
-        style={{ gridTemplateColumns: 左宽 + "px 6px minmax(340px, 1fr) 6px " + 右宽 + "px" }}
+        style={{ gridTemplateColumns: 左宽 + "px 6px minmax(420px, 1fr) 6px " + 右宽 + "px" }}
       >
         <左栏
           项目={项目}
@@ -652,7 +690,7 @@ export function 三栏布局() {
           存好={(新设定) => {
             set设定(新设定)
             套用外观(新设定.外观)
-            set显示设置(false)
+            /* 这里不关窗：设置页的「应用」要留在原地，「保存」自己会关 */
           }}
           成员们={成员们}
           派活中={派活中}
