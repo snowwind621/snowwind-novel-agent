@@ -9,7 +9,8 @@
     "build": "vite build && node 脚本/构建.mjs",
     "start": "electron .",
     "dev": "npm run build && npm run start",
-    "预览": "node dist/预览.cjs"
+    "预览": "node dist/预览.cjs",
+    "整洁": "node 脚本/整洁检查.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",
