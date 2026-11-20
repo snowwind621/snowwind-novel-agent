@@ -4,6 +4,7 @@ import fs from "node:fs"
 import path from "node:path"
 
 const 根 = process.cwd()
+const 只看暂存 = process.argv.includes("--暂存")
 let 有问题 = false
 
 function 报(名, 是好的, 说明) {
@@ -15,12 +16,20 @@ function 跑(命令) {
   return execSync(命令, { cwd: 根, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim()
 }
 
-// 1. 工作区是否干净
-const 状态 = 跑("git status --porcelain")
-报("工作区干净", 状态 === "", 状态 ? 状态.split("\n").length + " 项待提交/未跟踪" : "")
+// 1. 工作区是否干净（预提交钩子里跳过这项，因为此刻本来就有待提交内容）
+if (!只看暂存) {
+  const 状态 = 跑("git status --porcelain")
+  报("工作区干净", 状态 === "", 状态 ? 状态.split("\n").length + " 项待提交/未跟踪" : "")
+}
 
-// 2. 已跟踪文件清单
-const 文件们 = 跑("git -c core.quotepath=false ls-files").split("\n").filter(Boolean)
+// 2. 文件清单：钩子模式只看这一次要提交的内容
+const 文件们 = (
+  只看暂存
+    ? 跑("git -c core.quotepath=false diff --cached --name-only --diff-filter=ACMR")
+    : 跑("git -c core.quotepath=false ls-files")
+)
+  .split("\n")
+  .filter(Boolean)
 
 // 3. 密钥扫描
 const 密钥式 = /sk-[A-Za-z0-9]{16,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}/

@@ -1,0 +1,4 @@
+#!/bin/sh
+# 只负责一件事：提交前扫一遍暂存内容，密钥、大文件、日志一律不许进库。
+cd "$(git rev-parse --show-toplevel)" || exit 1
+node "脚本/整洁检查.mjs" --暂存
