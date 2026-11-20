@@ -1,8 +1,8 @@
 // 只负责一件事：给界面提供强类型的「桥」入口与共用小工具。
-import type { 项目摘要, 看板数据, 设置, 对话请求, 章节摘要 } from "../03 进程桥接/通道"
+import type { 项目摘要, 看板数据, 设置, 对话请求, 章节摘要, 待裁定章, 待裁定条目, 文件节点, 文件树结果, 文件内容 } from "../03 进程桥接/通道"
 import { 创建网页桥 } from "./网页桥"
 
-export type { 项目摘要, 看板数据, 设置, 对话请求, 章节摘要 }
+export type { 项目摘要, 看板数据, 设置, 对话请求, 章节摘要, 待裁定章, 待裁定条目, 文件节点, 文件树结果, 文件内容 }
 
 export interface 对话事件 {
   请求号: string
@@ -82,6 +82,12 @@ export interface 对话条目 {
   文本: string
   明细?: 派活成员结果[]
   进行中?: boolean
+  /** 说话时刻（毫秒时间戳），界面只显示 HH:mm */
+  时间?: number
+  /** 被重新生成 / 重试替代了，正文留着但标一下 */
+  被替代?: boolean
+  /** 这次生成失败了，给一个重试按钮 */
+  出错?: boolean
 }
 
 export interface 同步结果 {
@@ -109,6 +115,9 @@ export interface 桥接口 {
   监听派活: (回调: (事件: 派活进度) => void) => () => void
   导出: (格式: string) => Promise<导出结果>
   导入旧书库: (旧根: string, 新根: string) => Promise<{ 成功: boolean; 说明: string }>
+  书库文件树: () => Promise<文件树结果>
+  书库读文件: (相对路径: string) => Promise<文件内容>
+  书库写文件: (相对路径: string, 内容: string) => Promise<{ 成功: boolean; 说明: string }>
   书架: () => Promise<书架项[]>
   移出书架: (路径: string) => Promise<书架项[]>
   模型清单: () => Promise<string[] | { 错误: string }>
@@ -129,4 +138,11 @@ export function 计字数(正文: string): number {
 export function 千字(数: number): string {
   if (数 < 1000) return 数 + " 字"
   return (数 / 10000).toFixed(1) + " 万字"
+}
+
+/** 消息时间：HH:mm；没记时间就不显示。 */
+export function 时刻(时间?: number): string {
+  if (!时间) return ""
+  const 日 = new Date(时间)
+  return String(日.getHours()).padStart(2, "0") + ":" + String(日.getMinutes()).padStart(2, "0")
 }

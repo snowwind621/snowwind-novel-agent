@@ -48,7 +48,15 @@ for (const 文件 of 文件们) {
 
 // 4. 大文件（> 1MB）
 const 大文件 = 文件们
-  .map((文件) => ({ 文件, 大小: fs.statSync(path.join(根, 文件)).size }))
+  .map((文件) => {
+    try {
+      return { 文件, 大小: fs.statSync(path.join(根, 文件)).size }
+    } catch {
+      // 已删除但还没提交的文件：跳过，不算问题
+      return null
+    }
+  })
+  .filter(Boolean)
   .filter((项) => 项.大小 > 1024 * 1024)
 报("没有超过 1MB 的文件", 大文件.length === 0, 大文件.map((项) => 项.文件 + " " + Math.round(项.大小 / 1024) + "KB").join("、"))
 

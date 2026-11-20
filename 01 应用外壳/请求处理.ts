@@ -1,10 +1,10 @@
 // 只负责一件事：实现每个通道背后的业务。主进程与浏览器预览共用这一份，杜绝两套逻辑。
 import path from "node:path"
 import { 通道 } from "../03 进程桥接/通道"
-import type { 项目摘要, 看板数据, 设置, 对话请求, 续写请求, 改写请求, 书架项 } from "../03 进程桥接/通道"
+import type { 项目摘要, 看板数据, 设置, 对话请求, 续写请求, 改写请求, 书架项, 文件节点, 文件树结果, 文件内容 } from "../03 进程桥接/通道"
 import { 扫描项目 } from "../10 书库检索/项目扫描"
 import { 装配看板 } from "../10 书库检索/看板装配"
-import { 读文本, 原子写文本, 存在 } from "../11 文件工作区/原子写"
+import { 读文本, 原子写文本, 存在, 列目录 } from "../11 文件工作区/原子写"
 import { 提交 } from "../11 文件工作区/Git提交"
 import { 读设置, 写设置 } from "../14 配置密钥/设置存储"
 import { 记事件 } from "../13 共享黑板/事件日志"
@@ -13,6 +13,7 @@ import { 组装系统提示 } from "../05 编排内核/章节提示词"
 import { 同步章节台账 } from "../09 台账同步/同步台账"
 import { 路径, 派活归档 } from "../10 书库检索/书库布局"
 import { 导入旧书库 } from "../16 书库迁移/导入旧书库"
+import { 抽建议, 写建议文件, 读全部建议 } from "../17 建议审阅/待裁定建议"
 import { 生成集群, 读集群, 存集群 } from "../06 智能体运行时/成员目录"
 import type { 集群成员 } from "../06 智能体运行时/成员目录"
 import { 派活, 选阵容 } from "../05 编排内核/集群调度"
@@ -41,6 +42,51 @@ function 写书架(数据目录: string, 项们: 书架项[]): 书架项[] {
 function 记书架(数据目录: string, 项目: 项目摘要): void {
   const 旧 = 读书架(数据目录).filter((项) => 项.路径 !== 项目.路径)
   写书架(数据目录, [{ 路径: 项目.路径, 书名: 项目.书名, 最后打开: new Date().toISOString() }, ...旧])
+}
+
+/** 只认书库内的相对路径：不许 ..、不许绝对路径、不许盘符，拼完必须仍落在书库根里。 */
+function 书内路径(根: string, 相对: string): string {
+  const 净 = String(相对 ?? "").replace(/\\/g, "/").trim()
+  if (!净) throw new Error("路径为空")
+  if (净.startsWith("/") || /^[a-zA-Z]:/.test(净)) throw new Error("只接受书库内的相对路径")
+  if (净.split("/").some((段) => 段 === "" || 段 === "." || 段 === "..")) throw new Error("路径里不能带 . 或 ..")
+  const 根解 = path.resolve(根)
+  const 拼 = path.resolve(根解, 净)
+  if (拼 === 根解 || !拼.startsWith(根解 + path.sep)) throw new Error("路径越界：" + 相对)
+  return 拼
+}
+
+const 文本后缀 = new Set([".md", ".txt", ".yaml", ".yml", ".json", ".csv", ".xml", ".html", ".css", ".js", ".ts", ".toml"])
+
+/** 递归列书库：深度 6、条目 2000 封顶，隐藏文件（含 .git）不列。 */
+async function 读书库树(根: string): Promise<文件树结果> {
+  let 已数 = 0
+  let 截断 = false
+  const 走 = async (目录: string, 深: number): Promise<文件节点[]> => {
+    if (深 > 6 || 截断) return []
+    const 项们 = (await 列目录(目录).catch(() => []))
+      .filter((项) => !项.名称.startsWith("."))
+      .sort((甲, 乙) => (甲.是目录 === 乙.是目录 ? 甲.名称.localeCompare(乙.名称, "zh") : 甲.是目录 ? -1 : 1))
+    const 结果: 文件节点[] = []
+    for (const 项 of 项们) {
+      if (已数 >= 2000) {
+        截断 = true
+        break
+      }
+      已数++
+      const 绝 = path.join(目录, 项.名称)
+      const 相对 = path.relative(根, 绝).split(path.sep).join("/")
+      if (项.是目录) {
+        结果.push({ 名称: 项.名称, 相对路径: 相对, 是目录: true, 大小: 0, 子: await 走(绝, 深 + 1) })
+      } else {
+        const 信息 = await fs.promises.stat(绝).catch(() => null)
+        结果.push({ 名称: 项.名称, 相对路径: 相对, 是目录: false, 大小: 信息?.size ?? 0 })
+      }
+    }
+    return 结果
+  }
+  const 树 = await 走(path.resolve(根), 1)
+  return { 树, 截断 }
 }
 
 export interface 处理器集 {
@@ -123,12 +169,12 @@ export function 创建请求处理(
     },
 
     [通道.读取看板]: async () => {
-      if (状态.看板) return 状态.看板
-      if (状态.项目) {
-        状态.看板 = await 装配看板(状态.项目.路径, 状态.项目.统计.最新章节)
-        return 状态.看板
+      if (!状态.项目) {
+        return { 最新章节: 0, 伏笔: [], 统计: { 总数: 0, 已兑现: 0, 待兑现: 0, 超期: 0, 久置: 0 }, 台账: [], 待裁定: [] }
       }
-      return { 最新章节: 0, 伏笔: [], 统计: { 总数: 0, 已兑现: 0, 待兑现: 0, 超期: 0, 久置: 0 }, 台账: [] }
+      if (!状态.看板) 状态.看板 = await 装配看板(状态.项目.路径, 状态.项目.统计.最新章节)
+      // 待裁定每次现读：只是几个很小的 md，派活刚落地就该立刻反映到界面上。
+      return { ...状态.看板, 待裁定: 读全部建议(状态.项目.路径) }
     },
 
     [通道.台账同步]: async (章节号: number) => {
@@ -211,14 +257,46 @@ export function 创建请求处理(
       return 导入旧书库(旧根, 新根)
     },
 
+    [通道.书库文件树]: async (): Promise<文件树结果> => {
+      if (!状态.项目) return { 树: [], 截断: false }
+      return 读书库树(状态.项目.路径)
+    },
+
+    [通道.书库读文件]: async (相对路径: string): Promise<文件内容> => {
+      if (!状态.项目) throw new Error("尚未打开书库")
+      const 绝 = 书内路径(状态.项目.路径, 相对路径)
+      const 信息 = await fs.promises.stat(绝).catch(() => null)
+      if (!信息 || 信息.isDirectory()) throw new Error("不是可读的文件：" + 相对路径)
+      if (信息.size > 2 * 1024 * 1024) throw new Error("文件超过 2MB，界面里不打开")
+      const 是文本 = 文本后缀.has(path.extname(绝).toLowerCase())
+      return { 相对路径, 文本: 是文本 ? await 读文本(绝) : "", 大小: 信息.size, 是文本 }
+    },
+
+    [通道.书库写文件]: async (相对路径: string, 内容: string) => {
+      if (!状态.项目) return { 成功: false, 说明: "尚未打开书库" }
+      const 绝 = 书内路径(状态.项目.路径, 相对路径)
+      if (Buffer.byteLength(内容 ?? "", "utf8") > 2 * 1024 * 1024) return { 成功: false, 说明: "内容超过 2MB，没有写入" }
+      const 规范 = path.relative(状态.项目.路径, 绝).split(path.sep).join("/")
+      await 原子写文本(绝, 内容)
+      const 提交结果 = await 提交(状态.项目.路径, "编辑 " + 规范, [规范])
+      记事件(数据目录, 状态.项目.路径, {
+        时间: new Date().toISOString(),
+        类型: "文件保存",
+        发起者: "作者",
+        摘要: "保存 " + 规范 + "；" + 提交结果.说明,
+      })
+      状态.看板 = await 装配看板(状态.项目.路径, 状态.项目.统计.最新章节)
+      return { 成功: true, 说明: "已保存 " + 规范 + "；" + 提交结果.说明 }
+    },
+
     [通道.导出]: async (格式: string) => {
       if (!状态.项目) return { 成功: false, 说明: "尚未打开书库", 路径: "" }
-      const 章们: Array<{ 编号: number; 标题: string; 正文: string }> = []
+      const 章们: Array<{ 编号: number; 标题: string; 正文: string; 卷号?: number }> = []
       for (const 卷 of 状态.项目.卷) {
         for (const 章 of 卷.章节) {
           if (!章.文件) continue
           const 正文 = await 读文本(path.join(状态.项目.路径, 章.文件)).catch(() => "")
-          章们.push({ 编号: 章.编号, 标题: 章.标题, 正文 })
+          章们.push({ 编号: 章.编号, 标题: 章.标题, 正文, 卷号: 卷.编号 })
         }
       }
       try {
@@ -425,7 +503,8 @@ export function 创建请求处理(
     fs.mkdirSync(path.dirname(文件), { recursive: true })
     fs.appendFileSync(文件, (已有 ? "\n" : "") + 段.join("\n"), "utf8")
     const 开写包路径 = await 落开写包(章号, 标题, 任务, 结果)
-    await 提交(状态.项目.路径, "派活归档 + 开写包 ch" + 章号, [相对, 开写包路径])
+    const 建议路径 = 写建议文件(状态.项目.路径, 章号, 标题, 抽建议(结果.各自 ?? []))
+    await 提交(状态.项目.路径, "派活归档 + 开写包 + 待裁定建议 ch" + 章号, [相对, 开写包路径, 建议路径])
   }
 
   async function 派活流(任务: string, 编号: number, 回调?: (事件: any) => void) {

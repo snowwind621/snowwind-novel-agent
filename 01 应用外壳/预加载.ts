@@ -20,6 +20,9 @@ contextBridge.exposeInMainWorld("桥", {
   改写: (请求: unknown) => ipcRenderer.invoke(通道.改写, 请求),
   导出: (格式: string) => ipcRenderer.invoke(通道.导出, 格式),
   导入旧书库: (旧根: string, 新根: string) => ipcRenderer.invoke(通道.书库导入, 旧根, 新根),
+  书库文件树: () => ipcRenderer.invoke(通道.书库文件树),
+  书库读文件: (相对路径: string) => ipcRenderer.invoke(通道.书库读文件, 相对路径),
+  书库写文件: (相对路径: string, 内容: string) => ipcRenderer.invoke(通道.书库写文件, 相对路径, 内容),
   书架: () => ipcRenderer.invoke(通道.书架),
   移出书架: (路径: string) => ipcRenderer.invoke(通道.书架移除, 路径),
   监听派活: (回调: (事件: unknown) => void) => {

@@ -64,7 +64,7 @@ export async function 同步章节台账(参数: 同步参数): Promise<同步�
   }
 
   const 改动: string[] = []
-  const 待写: Array<[string[], string]> = []
+  const 待写: string[] = []
 
   // ── 时间线：本章一行，重复同步先删旧行再插新行 ──
   if (事实.事件.length > 0) {
@@ -89,7 +89,7 @@ export async function 同步章节台账(参数: 同步参数): Promise<同步�
       )
       追加行(行们, 新表, 行值)
       await 原子写文本(文件, 行们.join(换行))
-      待写.push([时间线, 时间线])
+      待写.push(时间线)
       改动.push("时间线：" + (删了 > 0 ? "替换" : "新增") + " ch" + 参数.章节号 + " 一行（" + 事实.事件.length + " 条事件）")
     }
   }
@@ -128,7 +128,7 @@ export async function 同步章节台账(参数: 同步参数): Promise<同步�
       }
       if (更新数 > 0) {
         await 原子写文本(文件, 行们.join(换行))
-        待写.push([出场追踪, 出场追踪])
+        待写.push(出场追踪)
         改动.push("出场追踪：" + 更新数 + " 人刷新到最后出场 ch" + 参数.章节号)
       }
     }
@@ -161,7 +161,7 @@ export async function 同步章节台账(参数: 同步参数): Promise<同步�
     }
     if (命中 > 0) {
       await 原子写文本(文件, 行们.join(换行))
-      待写.push([承诺台账, 承诺台账])
+      待写.push(承诺台账)
       改动.push("承诺台账：" + 命中 + " 条伏笔标记为 ch" + 参数.章节号 + " 兑现")
     }
   }
@@ -178,7 +178,7 @@ export async function 同步章节台账(参数: 同步参数): Promise<同步�
   const 提交结果 = await 提交(
     参数.根目录,
     "台账同步 ch" + 参数.章节号 + "《" + 参数.标题 + "》",
-    待写.map((项) => 项[0] as string),
+    待写,
   )
   记事件(参数.数据目录, 参数.根目录, {
     时间: new Date().toISOString(),

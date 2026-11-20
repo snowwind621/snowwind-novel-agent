@@ -1,0 +1,39 @@
+# 只负责一件事：electron-builder 的 Windows 便携版打包配置。
+
+appId: com.snowwind.novel-agent
+productName: 雪风小说工坊
+
+directories:
+  output: dist/发布
+
+# 只把跑起来真正需要的三样塞进 app.asar：主进程、预加载、界面产物。
+# 不写死 dist/**，否则 dist 里的截图、自检脚本会被一起打进去，白胖几十兆。
+# dependencies（react/react-dom）由 electron-builder 自动带上，devDependencies 一个不带。
+files:
+  - package.json
+  - dist/main.cjs
+  - dist/preload.cjs
+  - dist/renderer/**
+
+asar: true
+
+# 直接用 node_modules 里已装好的 electron，不再从网上下 115 MB 的 zip；离线也能打包。
+electronDist: node_modules/electron/dist
+
+# 源 package.json 里没有 author，NSIS 的版本信息需要它；只改包内的元数据，不动仓库里的文件。
+extraMetadata:
+  main: dist/main.cjs
+  author: 雪风
+
+win:
+  # 不签名，也不改写 exe 内部的图标与版本资源：都靠 rcedit，而 rcedit 来自 winCodeSign 包，
+  # 那个包里带着 macOS 的符号链接，Windows 没开「开发者模式」时解不开（要管理员权限）。
+  # 便携 exe 自己的版本信息由 NSIS 写，不依赖这一项。
+  signAndEditExecutable: false
+  target:
+    - target: portable
+      arch:
+        - x64
+
+portable:
+  artifactName: ${productName}-${version}-便携版.exe

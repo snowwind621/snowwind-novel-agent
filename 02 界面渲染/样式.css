@@ -98,16 +98,36 @@ button:disabled:hover { border-color: var(--线); color: var(--字); }
 
 .主体 {
   display: grid;
-  grid-template-columns: 300px 1fr 420px;
+  grid-template-columns: 300px 6px minmax(340px, 1fr) 6px 420px;
   flex: 1;
   min-height: 0;
 }
+
+/* 三栏之间的拖拽带：自身透明，中间一条细线冒充边界，hover / 拖拽时点亮 */
+.分隔条 {
+  position: relative;
+  cursor: col-resize;
+  background: transparent;
+  touch-action: none;
+}
+.分隔条::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--线);
+}
+.分隔条:hover, .分隔条.拖拽中 { background: var(--主淡); }
+.分隔条:hover::after, .分隔条.拖拽中::after { width: 2px; background: var(--主); }
+body.拖宽中 { cursor: col-resize; user-select: none; }
 
 .左栏 {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border-right: 1px solid var(--线);
   background: var(--底浅);
 }
 .分段 {
@@ -141,7 +161,6 @@ button:disabled:hover { border-color: var(--线); color: var(--字); }
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  border-left: 1px solid var(--线);
   background: var(--底浅);
 }
 
@@ -265,9 +284,9 @@ button:disabled:hover { border-color: var(--线); color: var(--字); }
   margin-bottom: 10px;
   line-height: 1.75;
 }
-.输入行 { display: flex; gap: 8px; flex: 0 0 auto; }
-.输入行 > div { display: flex; flex-direction: column; gap: 6px; flex: 0 0 68px; }
-.输入行 > div > button { width: 100%; padding: 8px 0; }
+.输入区 { display: flex; flex-direction: column; gap: 6px; flex: 0 0 auto; }
+.操作行 { display: flex; gap: 8px; align-items: center; }
+.操作右 { margin-left: auto; display: flex; gap: 6px; }
 .输入框 {
   flex: 1;
   min-height: 66px;
@@ -429,3 +448,73 @@ button:disabled:hover { border-color: var(--线); color: var(--字); }
   font-size: 11.5px;
   letter-spacing: 0.8px;
 }
+
+/* 书库文件树 */
+.树 { padding: 2px 0 12px; font-size: 12.5px; }
+.树行 {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  padding: 5px 12px 5px 0;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  white-space: nowrap;
+  transition: background-color 0.12s ease;
+}
+.树行:hover { background: var(--底更浅); }
+.树行.选中 { background: var(--主淡); border-left-color: var(--主); color: var(--主); }
+.树箭头 { color: var(--字弱); width: 12px; text-align: center; font-size: 11px; }
+.树名 { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.树数 { color: var(--字弱); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+/* 中栏的文件视图：md / json 这类用等宽字体更好读 */
+.文件正文 {
+  font-family: "Cascadia Mono", Consolas, "Microsoft YaHei", monospace;
+  font-size: 14px;
+  line-height: 1.85;
+  letter-spacing: 0;
+}
+
+/* 设置弹窗里的页签 */
+.设置页签 {
+  display: flex;
+  gap: 4px;
+  margin: 14px 0 10px;
+  border-bottom: 1px solid var(--线);
+}
+.设置页签按钮 {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--字弱);
+  padding: 8px 14px;
+  font-size: 13px;
+}
+.设置页签按钮:hover { color: var(--字); border-bottom-color: var(--线强); }
+.设置页签按钮.选中 { color: var(--主); border-bottom-color: var(--主); font-weight: 600; }
+
+/* 对话栏顶部工具行：模型选择、清空、导出 */
+.工具行 { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.工具下拉, .工具输入 {
+  padding: 4px 8px;
+  background: var(--底);
+  border: 1px solid var(--线);
+  border-radius: 6px;
+  color: var(--字);
+  font-family: inherit;
+  font-size: 11.5px;
+  outline: none;
+  max-width: 200px;
+}
+.工具下拉:focus, .工具输入:focus { border-color: var(--主); }
+
+/* 输入框上方的功能选择器 */
+.功能行 { display: flex; gap: 8px; align-items: center; }
+.功能按钮 { padding: 4px 10px; font-size: 12px; }
+.功能菜单 { left: 0; right: auto; top: 30px; min-width: 140px; }
+.菜单项.选中 { background: var(--主淡); color: var(--主); }
+
+/* 消息悬停才露出的复制 / 重新生成 / 重试 */
+.消息操作 { margin-left: auto; display: flex; gap: 4px; opacity: 0; transition: opacity 0.12s ease; }
+.消息:hover .消息操作, .消息操作:focus-within { opacity: 1; }

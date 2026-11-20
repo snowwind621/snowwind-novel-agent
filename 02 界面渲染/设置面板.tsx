@@ -1,13 +1,26 @@
-// 只负责一件事：编辑网关地址、密钥与四个角色的模型分工。
+// 只负责一件事：设置弹窗——模型接入与智能体集群两个页签。
 import React, { useState } from "react"
 import { 桥 } from "./接口"
-import type { 设置 } from "./接口"
+import type { 设置, 集群成员 } from "./接口"
+import { 集群面板 } from "./集群面板"
+
+type 设置页 = "模型接入" | "智能体集群"
 
 export function 设置面板(属性: {
   设定: 设置
   关闭: () => void
   存好: (新设定: 设置) => void
+  成员们: 集群成员[]
+  派活中: boolean
+  章节号: number | null
+  派活: (任务: string) => void
+  新建成员: (名称: string, 职责: string, 管辖: string) => void
+  删除成员: (id: string) => void
+  改成员: (id: string, 名称: string, 职责: string, 管辖: string) => void
+  待裁定数: number
+  看待裁定: () => void
 }) {
+  const [页, set页] = useState<设置页>("模型接入")
   const [草稿, set草稿] = useState<设置>(属性.设定)
   const [清单, set清单] = useState<string[]>([])
   const [提示, set提示] = useState("")
@@ -60,56 +73,87 @@ export function 设置面板(属性: {
         <h2>设置</h2>
         <div className="微信息">密钥只存在本机，不会写进书库目录。</div>
 
-        <div className="字段">
-          <label>网关地址（OpenAI 兼容）</label>
-          <input value={草稿.网关地址} onChange={(事件) => set草稿({ ...草稿, 网关地址: 事件.target.value })} />
-        </div>
-
-        <div className="字段">
-          <label>API 密钥</label>
-          <input
-            type="password"
-            value={草稿.API密钥}
-            onChange={(事件) => set草稿({ ...草稿, API密钥: 事件.target.value })}
-            placeholder="sk-..."
-          />
-        </div>
-
-        <div className="字段">
-          <button onClick={拉模型}>拉取模型清单</button>
-          <span className="微信息" style={{ marginLeft: 10 }}>{提示}</span>
-        </div>
-
-        <div className="两列">
-          {角色.map(([键, 说明]) => (
-            <div className="字段" key={键}>
-              <label>{说明}</label>
-              {清单.length > 0 ? (
-                <select value={草稿.分工[键]} onChange={(事件) => 改分工(键, 事件.target.value)}>
-                  {清单.map((模型) => (
-                    <option key={模型} value={模型}>
-                      {模型}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input value={草稿.分工[键]} onChange={(事件) => 改分工(键, 事件.target.value)} />
-              )}
-            </div>
+        <div className="设置页签">
+          {(["模型接入", "智能体集群"] as 设置页[]).map((名) => (
+            <button key={名} className={"设置页签按钮" + (页 === 名 ? " 选中" : "")} onClick={() => set页(名)}>
+              {名}
+              {名 === "智能体集群" ? " · " + 属性.成员们.length : ""}
+            </button>
           ))}
         </div>
 
-        <div className="字段">
-          <label>书库迁移（旧格式 → 雪风卷宗，旧目录只读不动）</label>
-          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            <button onClick={导入旧书库}>从旧格式导入…</button>
-            <span className="微信息">{迁移提示}</span>
-          </div>
-        </div>
+        {页 === "模型接入" ? (
+          <>
+            <div className="字段">
+              <label>网关地址（OpenAI 兼容）</label>
+              <input value={草稿.网关地址} onChange={(事件) => set草稿({ ...草稿, 网关地址: 事件.target.value })} />
+            </div>
+
+            <div className="字段">
+              <label>API 密钥</label>
+              <input
+                type="password"
+                value={草稿.API密钥}
+                onChange={(事件) => set草稿({ ...草稿, API密钥: 事件.target.value })}
+                placeholder="sk-..."
+              />
+            </div>
+
+            <div className="字段">
+              <button onClick={拉模型}>拉取模型清单</button>
+              <span className="微信息" style={{ marginLeft: 10 }}>{提示}</span>
+            </div>
+
+            <div className="两列">
+              {角色.map(([键, 说明]) => (
+                <div className="字段" key={键}>
+                  <label>{说明}</label>
+                  {清单.length > 0 ? (
+                    <select value={草稿.分工[键]} onChange={(事件) => 改分工(键, 事件.target.value)}>
+                      {清单.map((模型) => (
+                        <option key={模型} value={模型}>
+                          {模型}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input value={草稿.分工[键]} onChange={(事件) => 改分工(键, 事件.target.value)} />
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="字段">
+              <label>书库迁移（旧格式 → 雪风卷宗，旧目录只读不动）</label>
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <button onClick={导入旧书库}>从旧格式导入…</button>
+                <span className="微信息">{迁移提示}</span>
+              </div>
+            </div>
+          </>
+        ) : (
+          <集群面板
+            成员们={属性.成员们}
+            章节号={属性.章节号}
+            忙={属性.派活中}
+            派活={属性.派活}
+            新建成员={属性.新建成员}
+            删除成员={属性.删除成员}
+            改成员={属性.改成员}
+            待裁定数={属性.待裁定数}
+            看待裁定={属性.看待裁定}
+          />
+        )}
 
         <div className="底部行">
-          <button onClick={属性.关闭}>取消</button>
-          <button onClick={存}>保存</button>
+          {页 === "模型接入" ? (
+            <>
+              <button onClick={属性.关闭}>取消</button>
+              <button onClick={存}>保存</button>
+            </>
+          ) : (
+            <button onClick={属性.关闭}>关闭</button>
+          )}
         </div>
       </div>
     </div>

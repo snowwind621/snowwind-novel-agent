@@ -43,7 +43,23 @@ export interface 承诺行 {
   埋: string
   兑: string
   备注: string
+  /** 「参考间隔」是可选的台账列：没写就是 null（不按超期算，只按久置提醒）。 */
+  参考间隔: number | null
+  /** 「重要程度」「意图」也是可选列：没写回落 side / active，和旧镜像里的默认一致。 */
+  重要程度: string
+  意图: string
   小节: string
+}
+
+/** 可选列里的文字：去掉强调星号与空白，空串交给调用方回落默认值。 */
+function 读文字(格: string): string {
+  return 格.replace(/\*/g, "").trim()
+}
+
+/** 间隔格只认纯数字（允许带「章」）；空、破折号、别的字一律当没写。 */
+function 读间隔(格: string): number | null {
+  const 文本 = 格.replace(/[*\s]/g, "").replace(/章$/, "")
+  return /^\d+$/.test(文本) ? Number(文本) : null
 }
 
 export function 解析承诺台账(正文: string): 承诺行[] {
@@ -55,6 +71,9 @@ export function 解析承诺台账(正文: string): 承诺行[] {
     const 埋列 = 表.表头.findIndex((h) => h === "埋" || h.includes("埋入"))
     const 兑列 = 表.表头.findIndex((h) => h === "兑" || h.includes("兑现"))
     const 备注列 = 表.表头.findIndex((h) => h.includes("兑了什么") || h.includes("现状态"))
+    const 间隔列 = 表.表头.findIndex((h) => h.includes("参考间隔"))
+    const 程度列 = 表.表头.findIndex((h) => h.includes("重要程度"))
+    const 意图列 = 表.表头.findIndex((h) => h.includes("意图"))
     for (const 行 of 表.行) {
       const 编号 = (行[编号列] ?? "").replace(/\*/g, "").trim()
       if (!/^p-\d+/.test(编号)) continue
@@ -64,6 +83,9 @@ export function 解析承诺台账(正文: string): 承诺行[] {
         埋: 埋列 >= 0 ? (行[埋列] ?? "").trim() : "",
         兑: 兑列 >= 0 ? (行[兑列] ?? "").trim() : "",
         备注: 备注列 >= 0 ? (行[备注列] ?? "").trim() : "",
+        参考间隔: 读间隔(间隔列 >= 0 ? (行[间隔列] ?? "") : ""),
+        重要程度: 读文字(程度列 >= 0 ? (行[程度列] ?? "") : "") || "side",
+        意图: 读文字(意图列 >= 0 ? (行[意图列] ?? "") : "") || "active",
         小节: 表.标题,
       })
     }

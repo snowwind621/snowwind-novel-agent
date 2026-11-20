@@ -1,11 +1,34 @@
 // 只负责一件事：拼起三栏，持有全局状态（当前章、看板、集群、对话）。
 import React, { useEffect, useRef, useState } from "react"
-import { 桥, 千字 } from "./接口"
-import type { 项目摘要, 看板数据, 设置, 集群成员, 对话条目, 书架项 } from "./接口"
+import { 桥, 千字, 时刻 } from "./接口"
+import type { 项目摘要, 看板数据, 设置, 集群成员, 对话条目, 书架项, 文件内容, 待裁定章 } from "./接口"
 import { 左栏 } from "./左栏"
+import type { 左页 } from "./左栏"
 import { 正文编辑 } from "./正文编辑"
+import { 文件视图 } from "./文件视图"
 import { AI面板 } from "./AI面板"
 import { 设置面板 } from "./设置面板"
+
+function 读宽度(键: string, 默认: number, 下限: number, 上限: number): number {
+  const 存 = Number(localStorage.getItem(键))
+  return Number.isFinite(存) && 存 >= 下限 && 存 <= 上限 ? Math.round(存) : 默认
+}
+
+function 夹住(值: number, 下限: number, 上限: number): number {
+  return Math.min(上限, Math.max(下限, 值))
+}
+
+/** 链接里带 ?页=文件 就落到那一页，方便深链与截图。 */
+function 初页(): 左页 {
+  const 链接页 = new URLSearchParams(location.search).get("页")
+  return 链接页 === "文件" || 链接页 === "台账" || 链接页 === "建议" ? 链接页 : "章节"
+}
+
+/** 看板通道顺带带回全书待裁定（见 01 应用外壳/请求处理.ts），这里只挑出来，读不到就当空。 */
+function 取待裁定(看板: unknown): 待裁定章[] {
+  const 值 = (看板 as { 待裁定?: 待裁定章[] } | null)?.待裁定
+  return Array.isArray(值) ? 值 : []
+}
 
 export function 三栏布局() {
   const [项目, set项目] = useState<项目摘要 | null>(null)
@@ -23,6 +46,15 @@ export function 三栏布局() {
   const [显示导出, set显示导出] = useState(false)
   const [书架, set书架] = useState<书架项[]>([])
   const [显示书架, set显示书架] = useState(false)
+  const [文件, set文件] = useState<文件内容 | null>(null)
+  const [待裁定, set待裁定] = useState<待裁定章[]>([])
+  const [左页, set左页] = useState<左页>(初页)
+  const [左宽, set左宽] = useState(() => 读宽度("左栏宽", 300, 220, 460))
+  const [右宽, set右宽] = useState(() => 读宽度("右栏宽", 420, 320, 640))
+  const [拖侧, set拖侧] = useState<"左" | "右" | null>(null)
+  const [选区, set选区] = useState<{ 起点: number; 终点: number } | null>(null)
+  const [台账同步中, set台账同步中] = useState(false)
+  const 拖拽 = useRef<{ 侧: "左" | "右"; 起X: number; 起宽: number } | null>(null)
   const 派活占位 = useRef("")
   const 续写请求号 = useRef("")
   const [续写中, set续写中] = useState(false)
@@ -40,7 +72,7 @@ export function 三栏布局() {
 
   useEffect(() => {
     try {
-      localStorage.setItem("对话", JSON.stringify(消息们.slice(-80)))
+      localStorage.setItem("对话", JSON.stringify(消息们.slice(-200)))
     } catch {
       /* 存不下就算了，不影响写作 */
     }
@@ -101,10 +133,68 @@ export function 三栏布局() {
     localStorage.setItem("主题", 新主题)
   }
 
-  const 追加 = (条: 对话条目) => set消息们((旧) => [...旧, 条])
+  // 宽度落 localStorage：重开保持上次拖到的位置。
+  useEffect(() => {
+    localStorage.setItem("左栏宽", String(左宽))
+  }, [左宽])
+
+  useEffect(() => {
+    localStorage.setItem("右栏宽", String(右宽))
+  }, [右宽])
+
+  // 拖拽只挂一次 window 监听：按下时记起点，移动时按差值改宽度，松开就收工。
+  useEffect(() => {
+    const 移动 = (事件: PointerEvent) => {
+      const 记 = 拖拽.current
+      if (!记) return
+      const 差 = 事件.clientX - 记.起X
+      if (记.侧 === "左") set左宽(夹住(记.起宽 + 差, 220, 460))
+      else set右宽(夹住(记.起宽 - 差, 320, 640))
+    }
+    const 松开 = () => {
+      if (!拖拽.current) return
+      拖拽.current = null
+      set拖侧(null)
+      document.body.classList.remove("拖宽中")
+    }
+    window.addEventListener("pointermove", 移动)
+    window.addEventListener("pointerup", 松开)
+    return () => {
+      window.removeEventListener("pointermove", 移动)
+      window.removeEventListener("pointerup", 松开)
+    }
+  }, [])
+
+  const 起拖 = (侧: "左" | "右") => (事件: React.PointerEvent<HTMLDivElement>) => {
+    事件.preventDefault()
+    拖拽.current = { 侧, 起X: 事件.clientX, 起宽: 侧 === "左" ? 左宽 : 右宽 }
+    set拖侧(侧)
+    document.body.classList.add("拖宽中")
+  }
+
+  // 待裁定每次现读（很小），换书、换章、派活起落都要重看一遍。
+  useEffect(() => {
+    let 还有效 = true
+    void (async () => {
+      try {
+        const 数据 = await 桥.读取看板()
+        if (还有效) set待裁定(取待裁定(数据))
+      } catch {
+        if (还有效) set待裁定([])
+      }
+    })()
+    return () => {
+      还有效 = false
+    }
+  }, [项目?.路径, 章节号, 派活中])
+
+  // 每条消息自动盖章时间；历史留 200 条上限，别把 localStorage 撑爆。
+  const 追加 = (条: 对话条目) => set消息们((旧) => [...旧, { 时间: Date.now(), ...条 }].slice(-200))
   const 改条 = (id: string, 补: string) =>
     set消息们((旧) => 旧.map((条) => (条.id === id ? { ...条, 文本: 条.文本 + 补 } : 条)))
   const 完成 = (id: string) => set消息们((旧) => 旧.map((条) => (条.id === id ? { ...条, 进行中: false } : 条)))
+  const 补条 = (id: string, 补丁: Partial<对话条目>) =>
+    set消息们((旧) => 旧.map((条) => (条.id === id ? { ...条, ...补丁 } : 条)))
 
   useEffect(() => {
     void (async () => {
@@ -160,24 +250,62 @@ export function 三栏布局() {
     }
   }
 
-  const 选章 = async (编号: number) => {
-    if (脏 && !window.confirm("当前章节有未保存的修改，仍要切换吗？")) return
+  const 选章 = async (编号: number): Promise<boolean> => {
+    if (脏 && !window.confirm("当前章节有未保存的修改，仍要切换吗？")) return false
     const 读 = await 桥.读取章节(编号)
     set章节号(读.编号)
     set标题(读.标题)
     set正文(读.正文)
     set脏(false)
     set状态字("")
+    set文件(null)
+    return true
   }
 
-  const 同步台账 = async (编号: number) => {
+  /** 书库树里点一个文件：是某章正文就切回章节视图，其余进文件视图。 */
+  const 打开文件 = async (相对路径: string) => {
+    for (const 卷 of 项目?.卷 ?? []) {
+      const 章 = 卷.章节.find((项) => 项.文件 === 相对路径)
+      if (!章) continue
+      if (!(await 选章(章.编号))) return
+      set文件(null)
+      return
+    }
+    try {
+      set文件(await 桥.书库读文件(相对路径))
+      set状态字("")
+    } catch (错误: any) {
+      set状态字("打不开文件：" + String(错误?.message ?? 错误))
+    }
+  }
+
+  /** 文件视图里保存：通道里已经做了原子写 + Git 提交 + 黑板事件。 */
+  const 保存文件 = async (相对路径: string, 文本: string): Promise<string> => {
+    const 结果 = await 桥.书库写文件(相对路径, 文本)
+    set看板(await 桥.读取看板())
+    return 结果.说明
+  }
+
+  /** 记到对话=true 是从对话栏点的，结果要变成一条系统消息；保存后的自动同步不刷屏。 */
+  const 同步台账 = async (编号: number, 记到对话 = false) => {
+    const 占位id = "台账-" + Date.now()
+    set台账同步中(true)
     set状态字("台账同步中…")
+    if (记到对话) 追加({ id: 占位id, 谁: "系统", 文本: "台账同步中…第 " + 编号 + " 章", 进行中: true })
     try {
       const 结果 = await 桥.台账同步(编号)
       set状态字(结果.说明)
+      if (记到对话) {
+        const 改动 = 结果.改动?.length ? "\n改动 " + 结果.改动.length + " 处：" + 结果.改动.slice(0, 8).join("、") : ""
+        补条(占位id, { 文本: "台账同步：" + 结果.说明 + 改动, 进行中: false })
+      }
       set看板(await 桥.读取看板())
     } catch (错误: any) {
-      set状态字("台账同步失败：" + String(错误?.message ?? 错误))
+      const 说明 = "台账同步失败：" + String(错误?.message ?? 错误)
+      set状态字(说明)
+      if (记到对话) 补条(占位id, { 文本: 说明, 进行中: false, 出错: true })
+    } finally {
+      set台账同步中(false)
     }
   }
 
@@ -195,7 +323,11 @@ export function 三栏布局() {
   }
 
   const 派活 = async (任务: string) => {
-    if (派活中 || 章节号 === null) return
+    if (派活中) return
+    if (章节号 === null) {
+      set状态字("先选一章，再派活")
+      return
+    }
     set派活中(true)
     const 占位 = "派-" + Date.now()
     派活占位.current = 占位
@@ -220,7 +352,7 @@ export function 三栏布局() {
     }
   }
 
-  const 续写 = async () => {
+  const 续写 = async (指令 = "") => {
     if (章节号 === null || 续写中) return
     const 请求号 = "续-" + Date.now()
     续写请求号.current = 请求号
@@ -233,6 +365,7 @@ export function 三栏布局() {
         章节号,
         标题,
         已有正文: 正文,
+        指令: 指令.trim() || undefined,
       })
     } catch (错误: any) {
       set续写中(false)
@@ -276,11 +409,15 @@ export function 三栏布局() {
     set状态字("已替换为改写版，记得保存")
   }
 
-  const 停止续写 = async () => {
-    if (!续写请求号.current) return
-    await 桥.中止对话(续写请求号.current)
+  /** 停止：续写与改写两个流一起掐掉（对话流由右侧面板自己停）。 */
+  const 停止AI = async () => {
+    const 号们 = [续写请求号.current, 改写请求号.current].filter((号) => Boolean(号))
+    for (const 号 of 号们) await 桥.中止对话(号)
+    续写请求号.current = ""
+    改写请求号.current = ""
     set续写中(false)
-    set状态字("已停止续写")
+    set改写中(false)
+    if (号们.length) set状态字("已停止")
   }
 
   const 删除成员 = async (id: string) => {
@@ -315,6 +452,33 @@ export function 三栏布局() {
     set脏(true)
     set状态字("已插入正文，记得保存")
   }
+
+  const 清空对话 = () => {
+    if (!window.confirm("清空全部对话记录？清掉就找不回来了。")) return
+    set消息们([])
+    try {
+      localStorage.removeItem("对话")
+    } catch {
+      /* 清不掉也不影响写作 */
+    }
+  }
+
+  /** 导出成 Markdown 落进书库 讨论/（走 书库/写文件，顺带 Git 提交）。 */
+  const 导出对话 = async (): Promise<string> => {
+    if (!项目) return "还没有打开书库"
+    if (消息们.length === 0) return "还没有对话可导出"
+    const 现在 = new Date()
+    const 戳 = 现在.toISOString().slice(0, 16).replace(/[:T]/g, "-")
+    const 行们 = ["# 对话记录 · " + 现在.toLocaleString("zh-CN"), "", "> 由右侧对话栏导出，仅供追溯，不作写作依据。", ""]
+    for (const 条 of 消息们) {
+      行们.push("## " + 条.谁 + " · " + (时刻(条.时间) || "—"), "", 条.文本.trim() || "（空）", "")
+      for (const 项 of 条.明细 ?? []) 行们.push("- **" + 项.成员 + "**（" + 项.角色 + "）：" + 项.产出.replace(/\n+/g, " "), "")
+    }
+    const 结果 = await 桥.书库写文件("讨论/对话记录-" + 戳 + ".md", 行们.join("\n"))
+    return 结果.说明
+  }
+
+  const 本章条目 = 待裁定.find((项) => 项.章号 === (章节号 ?? 0))?.条目 ?? []
 
   return (
     <div className="框架">
@@ -383,19 +547,32 @@ export function 三栏布局() {
         </div>
       </div>
 
-      <div className="主体">
+      <div
+        className="主体"
+        style={{ gridTemplateColumns: 左宽 + "px 6px minmax(340px, 1fr) 6px " + 右宽 + "px" }}
+      >
         <左栏
           项目={项目}
           当前章={章节号}
           选章={选章}
           看板={看板}
-          成员们={成员们}
-          派活中={派活中}
-          派活={派活}
-          新建成员={新建成员}
-          删除成员={删除成员}
-          改成员={改成员}
+          待裁定={待裁定}
+          页={左页}
+          切页={(页) => {
+            set左页(页)
+            if (页 === "章节") set文件(null)
+          }}
+          当前文件={文件 ? 文件.相对路径 : null}
+          打开文件={(相对路径: string) => void 打开文件(相对路径)}
         />
+        <div
+          className={"分隔条" + (拖侧 === "左" ? " 拖拽中" : "")}
+          onPointerDown={起拖("左")}
+          title="拖动调整左栏宽度"
+        />
+        {文件 ? (
+          <文件视图 内容={文件} 保存={保存文件} 关闭={() => set文件(null)} />
+        ) : (
         <正文编辑
           已开书库={Boolean(项目)}
           编号={章节号}
@@ -407,20 +584,21 @@ export function 三栏布局() {
             set脏(true)
           }}
           保存={保存}
-          同步台账={() => 章节号 !== null && 同步台账(章节号)}
-          续写={续写}
-          停止续写={停止续写}
-          续写中={续写中}
-          改写={发起改写}
-          改写中={改写中}
+          报选区={(起, 止) => set选区({ 起点: 起, 终点: 止 })}
           状态字={状态字}
+        />
+        )}
+        <div
+          className={"分隔条" + (拖侧 === "右" ? " 拖拽中" : "")}
+          onPointerDown={起拖("右")}
+          title="拖动调整右栏宽度"
         />
         <div className="右栏">
           <AI面板
             消息们={消息们}
             追加={追加}
             改条={改条}
-            完成={完成}
+            补条={补条}
             项目={项目}
             章节号={章节号}
             标题={标题}
@@ -429,6 +607,21 @@ export function 三栏布局() {
             看板={看板}
             追加正文={追加正文}
             采纳改写={采纳改写}
+            取选区={() => {
+              if (!选区 || 选区.终点 <= 选区.起点) return null
+              const 原文 = 正文.slice(选区.起点, 选区.终点)
+              return 原文.trim() ? { 原文, 起点: 选区.起点, 终点: 选区.终点 } : null
+            }}
+            续写={(指令: string) => void 续写(指令)}
+            改写={发起改写}
+            同步台账={() => {
+              if (章节号 !== null) void 同步台账(章节号, true)
+            }}
+            派活={(任务: string) => void 派活(任务)}
+            停止AI={() => void 停止AI()}
+            清空对话={清空对话}
+            导出对话={导出对话}
+            忙={续写中 || 改写中 || 派活中 || 台账同步中}
           />
         </div>
       </div>
@@ -440,6 +633,18 @@ export function 三栏布局() {
           存好={(新设定) => {
             set设定(新设定)
             set显示设置(false)
+          }}
+          成员们={成员们}
+          派活中={派活中}
+          章节号={章节号}
+          派活={派活}
+          新建成员={新建成员}
+          删除成员={删除成员}
+          改成员={改成员}
+          待裁定数={本章条目.length}
+          看待裁定={() => {
+            set显示设置(false)
+            set左页("建议")
           }}
         />
       ) : null}

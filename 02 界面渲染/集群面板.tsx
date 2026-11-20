@@ -10,6 +10,8 @@ export function 集群面板(属性: {
   新建成员: (名称: string, 职责: string, 管辖: string) => void
   删除成员: (id: string) => void
   改成员: (id: string, 名称: string, 职责: string, 管辖: string) => void
+  待裁定数: number
+  看待裁定: () => void
 }) {
   const [自定义, set自定义] = useState("")
   const [新开, set新开] = useState(false)
@@ -41,6 +43,10 @@ export function 集群面板(属性: {
       <div className="统计行">
         <span className="胶囊">成员 {属性.成员们.length}</span>
         <span className="胶囊">章节 ch{章}</span>
+        {属性.忙 ? <span className="胶囊 警">正在召集…</span> : null}
+        <button className="胶囊" onClick={属性.看待裁定}>
+          {属性.待裁定数} 条待裁定
+        </button>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
@@ -77,7 +83,7 @@ export function 集群面板(属性: {
         </button>
       </div>
 
-      {属性.忙 ? <div className="微信息" style={{ marginBottom: 10 }}>负责人正在工作，答完会自动汇总到右侧…</div> : null}
+      {属性.忙 ? <div className="微信息" style={{ marginBottom: 10 }}>正在召集… 负责人还在写，答完会自动汇总到右侧对话栏。</div> : null}
 
       <div className="分组标题" style={{ paddingLeft: 0 }}>固定角色</div>
       {固定.map((成员) => (
