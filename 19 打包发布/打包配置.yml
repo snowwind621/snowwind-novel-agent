@@ -1,4 +1,4 @@
-# 只负责一件事：electron-builder 的 Windows 便携版打包配置。
+# 只负责一件事：electron-builder 的 Windows 安装包（NSIS）打包配置。
 
 appId: com.snowwind.novel-agent
 productName: 雪风小说工坊

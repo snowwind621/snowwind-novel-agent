@@ -1,0 +1,101 @@
+// 只负责一件事：设置里的「智能体」分组（集群 + 讨论/计划语义 + 人格 + 技能）。
+import React from "react"
+import type { 智能体设置, 技能项, 集群成员 } from "../接口"
+import { 集群面板 } from "../集群面板"
+import { 分组标题, 数字项, 文本项 } from "./共用"
+
+/** 讨论模式能用的只读工具白名单（存成逗号串）。 */
+const 白名单 = ["read_file", "query_ledger", "query_setting", "query_foreshadow", "query_knowledge", "query_timeline"]
+
+export function 智能体分组(属性: {
+  智能体: 智能体设置
+  改: (补丁: Partial<智能体设置>) => void
+  改人格: (键: keyof 智能体设置["人格"], 值: string) => void
+  改技能: (序: number, 补丁: Partial<技能项>) => void
+  加技能: () => void
+  删技能: (序: number) => void
+  成员们: 集群成员[]
+  章节号: number | null
+  派活中: boolean
+  派活: (任务: string) => void
+  新建成员: (名称: string, 职责: string, 管辖: string) => void
+  删除成员: (id: string) => void
+  改成员: (id: string, 名称: string, 职责: string, 管辖: string) => void
+  待裁定数: number
+  看待裁定: () => void
+}) {
+  const { 智能体, 改 } = 属性
+  const 选中 = 智能体.只读工具.split(",").map((项) => 项.trim()).filter(Boolean)
+  const 切工具 = (名: string) => {
+    const 新 = 选中.includes(名) ? 选中.filter((项) => 项 !== 名) : [...选中, 名]
+    改({ 只读工具: 新.join(",") })
+  }
+  return (
+    <>
+      <分组标题 文="集群" 说明="这本书里养着的负责人" />
+      <集群面板
+        成员们={属性.成员们}
+        章节号={属性.章节号}
+        忙={属性.派活中}
+        派活={属性.派活}
+        新建成员={属性.新建成员}
+        删除成员={属性.删除成员}
+        改成员={属性.改成员}
+        待裁定数={属性.待裁定数}
+        看待裁定={属性.看待裁定}
+      />
+      <数字项 标签="并发数" 说明="同时喊几个负责人" 值={智能体.并发数} 最小={1} 最大={8} 改={(值) => 改({ 并发数: 值 })} />
+      <数字项 标签="阵容上限" 说明="一本书最多养几个智能体" 值={智能体.阵容上限} 最小={1} 最大={12} 改={(值) => 改({ 阵容上限: 值 })} />
+
+      <分组标题 文="讨论模式" 说明="只读，不写文件" />
+      <数字项 标签="讨论人数" 说明="讨论时默认拉几位负责人（总编最后收口，不算在内）" 值={智能体.讨论人数} 最小={2} 最大={8} 改={(值) => 改({ 讨论人数: 值 })} />
+      <div className="设置项">
+        <label>讨论模式可用的只读工具</label>
+        <div className="勾选行">
+          {白名单.map((名) => (
+            <label key={名} className="开关行">
+              <input type="checkbox" checked={选中.includes(名)} onChange={() => 切工具(名)} />
+              {名}
+            </label>
+          ))}
+        </div>
+        <div className="设置说明">勾上的才会给讨论用；留空表示用内置白名单。</div>
+      </div>
+
+      <分组标题 文="计划模式" />
+      <文本项
+        标签="计划确认词"
+        说明="计划模式下你说这句话，等于「按计划做」。"
+        值={智能体.计划确认词}
+        改={(值) => 改({ 计划确认词: 值 })}
+        占位="确认"
+      />
+
+      <分组标题 文="六个人格" 说明={"文案里的「{书名}」会替换成当前书名"} />
+      {(["总编", "审校", "伏笔", "台账", "地点", "物品"] as Array<keyof 智能体设置["人格"]>).map((键) => (
+        <div className="设置项" key={键}>
+          <label>{键}</label>
+          <textarea className="人格框" value={智能体.人格[键]} onChange={(事件) => 属性.改人格(键, 事件.target.value)} />
+        </div>
+      ))}
+
+      <分组标题 文={"技能 · " + 智能体.技能.length} 说明="勾了「默认附加」的会随每次派活发过去" />
+      {智能体.技能.map((项, 序) => (
+        <div className="技能项" key={序}>
+          <div className="技能头">
+            <input placeholder="技能名称" value={项.名称} onChange={(事件) => 属性.改技能(序, { 名称: 事件.target.value })} />
+            <label className="开关行">
+              <input type="checkbox" checked={项.默认附加} onChange={(事件) => 属性.改技能(序, { 默认附加: 事件.target.checked })} />
+              默认附加
+            </label>
+            <button className="小按钮" onClick={() => 属性.删技能(序)}>
+              删除
+            </button>
+          </div>
+          <textarea className="人格框" placeholder="这段附加指令的内容" value={项.内容} onChange={(事件) => 属性.改技能(序, { 内容: 事件.target.value })} />
+        </div>
+      ))}
+      <button onClick={属性.加技能}>＋ 添加技能</button>
+    </>
+  )
+}

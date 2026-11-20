@@ -991,3 +991,51 @@ body.拖宽中 { cursor: col-resize; user-select: none; }
 .谁-总编 .气泡::after,
 .谁-集群 .气泡::after,
 .谁-改写 .气泡::after { left: -11px; border-right-color: var(--气泡底); border-top-color: transparent; }
+
+/* —— 设置：左导航 168px + 右侧滚动内容，外框尺寸固定 —— */
+.设置框 { display: flex; flex-direction: column; }
+.设置主体 {
+  display: grid;
+  grid-template-columns: 168px minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-height: 0;
+  border-top: 1px solid var(--线);
+}
+.设置导航 {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 6px;
+  overflow-y: auto;
+  border-right: 1px solid var(--线);
+  background: var(--底浅);
+}
+.设置导航项 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--字弱);
+  font-size: 12.5px;
+  text-align: left;
+}
+.设置导航项:hover { background: var(--底更浅); color: var(--字); }
+.设置导航项.选中 { background: var(--主淡); color: var(--主); }
+.设置内容 { overflow-y: auto; min-height: 0; padding: 14px 18px 20px; }
+.设置分组说明 { margin-left: auto; color: var(--字弱); font-size: 11px; font-weight: 400; }
+.勾选行 { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 4px; }
+
+/* 正文行宽 / 减少动态：设置页写 CSS 变量，这里只是消费 */
+.编辑器-正文区 { max-width: var(--正文行宽, 780px); margin-left: auto; margin-right: auto; width: 100%; }
+[data-减少动态="是"] *,
+[data-减少动态="是"] *::before,
+[data-减少动态="是"] *::after {
+  transition: none !important;
+  animation: none !important;
+}
+

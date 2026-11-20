@@ -1,7 +1,7 @@
 {
   "name": "snowwind-novel-agent",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "雪风小说工坊 · AI 主导的长篇小说写作工作台",
   "type": "module",
   "main": "99 构建产物/main.cjs",
@@ -10,10 +10,11 @@
     "start": "electron .",
     "dev": "npm run build && npm run start",
     "预览": "node \"99 构建产物/预览.cjs\"",
-    "打包": "npm run build && node \"19 打包发布/打便携exe.mjs\"",
+    "打包": "npm run build && node \"19 打包发布/打安装包.mjs\"",
     "整洁": "node \"18 构建工具/整洁检查.mjs\"",
     "回归": "node \"18 构建工具/回归检查.mjs\"",
-    "校验书库": "node \"18 构建工具/校验书库.mjs\""
+    "校验书库": "node \"18 构建工具/校验书库.mjs\"",
+    "预览:重启": "node \"18 构建工具/重启预览.mjs\""
   },
   "dependencies": {
     "react": "^18.3.1",

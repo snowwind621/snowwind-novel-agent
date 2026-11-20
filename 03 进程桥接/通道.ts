@@ -178,6 +178,12 @@ export interface 外观设置 {
   行距: number
   /** 整界面缩放，1 = 原始 */
   界面缩放: number
+  /** 正文行宽：窄 / 中 / 宽 */
+  行宽: "窄" | "中" | "宽"
+  /** 卡片与气泡圆角，px */
+  圆角: number
+  /** 减少动态效果：关掉过渡与动画 */
+  减少动态: boolean
 }
 
 export interface 编辑器设置 {
@@ -185,6 +191,10 @@ export interface 编辑器设置 {
   /** 0 = 关掉自动保存 */
   自动保存秒: number
   显示字数: boolean
+  /** 自动保存时顺手做一次 Git 提交 */
+  自动Git: boolean
+  /** 撤回栈深度（步） */
+  撤回栈深度: number
 }
 
 export interface 模型设置 {
@@ -196,6 +206,10 @@ export interface 模型设置 {
   重试间隔秒: number
   温度: number
   最大输出词元: number
+  /** 一次请求失败后，自动换下一个分工模型重试 */
+  失败换模型: boolean
+  /** 单轮最多跑几个工具回合 */
+  最大工具轮: number
 }
 
 export interface 上下文设置 {
@@ -204,6 +218,12 @@ export interface 上下文设置 {
   /** 0.3 ~ 1：上下文用到这个比例就开始压缩 */
   压缩触发比例: number
   压缩后保留条数: number
+  /** 压摘要用哪个分工（留空 = 助手） */
+  摘要模型: string
+  /** 把上一章结尾注入提示 */
+  注入上章结尾: boolean
+  /** 上一章结尾注入多少字 */
+  注入上章字数: number
 }
 
 export interface 技能项 {
@@ -227,6 +247,10 @@ export interface 智能体设置 {
 
 export interface 书库设置 {
   上次路径: string
+  /** 校验器默认是否附带「修复建议」 */
+  校验修复建议: boolean
+  /** 导出默认格式 */
+  导出格式: "docx" | "markdown" | "epub"
 }
 
 export interface 设置 {

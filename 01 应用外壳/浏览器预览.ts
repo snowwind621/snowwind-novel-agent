@@ -143,7 +143,11 @@ const 服务 = http.createServer(async (请求, 响应) => {
     if (!文件.startsWith(静态根) || !fs.existsSync(文件) || fs.statSync(文件).isDirectory()) {
       return 应答(响应, 404, { 错误: "找不到文件：" + 相对 })
     }
-    响应.writeHead(200, { "Content-Type": 类型表[path.extname(文件)] ?? "application/octet-stream" })
+    // 构建产物文件名带哈希，构建一变旧缓存就会白屏；预览服务一律禁缓存，刷新即得最新。
+  响应.writeHead(200, {
+    "Content-Type": 类型表[path.extname(文件)] ?? "application/octet-stream",
+    "Cache-Control": "no-store, max-age=0",
+  })
     fs.createReadStream(文件).pipe(响应)
   } catch (错误: any) {
     应答(响应, 500, { 错误: String(错误?.message ?? 错误) })

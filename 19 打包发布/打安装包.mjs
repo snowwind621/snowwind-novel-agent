@@ -26,7 +26,7 @@ if (!fs.existsSync(path.join(根, "99 构建产物", "main.cjs"))) {
 const 用的入口 = typeof 构建器.bin === "string" ? 构建器.bin : 构建器.bin["electron-builder"]
 const 入口 = path.join(根, "node_modules", "electron-builder", 用的入口)
 
-console.log("[打包] 正在产出 Windows 便携 exe，第一次会下载 NSIS 与签名工具，耐心等…")
+console.log("[打包] 正在产出 Windows 安装包（NSIS），第一次会下载 NSIS 与签名工具，耐心等…")
 // 缓存与临时目录都跟着 dist 走，不往系统目录里撒：清 dist 就是彻底清干净；
 // 系统临时目录被限权/空间不够时，makensis 会报 "error creating mmap"，用自己的临时目录最省事。
 const 结果 = spawnSync(process.execPath, [入口, "--win", "nsis", "--config", path.join(根, "19 打包发布", "打包配置.yml")], {
