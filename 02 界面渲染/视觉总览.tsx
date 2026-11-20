@@ -1,7 +1,7 @@
 // 只负责一件事：中栏「数据」面板——左边分类导航，右边每类台账的专属界面（只读、手绘 SVG）。
 import React, { useEffect, useRef, useState } from "react"
 import { 桥, 千字 } from "./接口"
-import type { 看板数据, 项目摘要 } from "./接口"
+import type { 知情结果, 看板数据, 项目摘要 } from "./接口"
 import { 图标 } from "./图标"
 import type { 图标名 } from "./图标"
 import { 进度环, 字数柱, 伏笔甘特, 人物条, 时间轴, 关系网, 热力矩阵, 属性条 } from "./图表"
@@ -89,6 +89,12 @@ export function 视觉总览(属性: {
   const [文件们, set文件们] = useState<Record<string, string>>({})
   const [读了, set读了] = useState(false)
   const [伏笔筛, set伏笔筛] = useState<"全部" | "超期" | "久置" | "待兑" | "已兑">("全部")
+  /** 阅读游标：0 = 跟到最新；>0 = 只看到第 N 章（存本地，换分类不重置） */
+  const [读到, set读到] = useState<number>(() => {
+    const 存 = Number(localStorage.getItem("阅读游标"))
+    return Number.isFinite(存) && 存 > 0 ? 存 : 0
+  })
+  const [知情数据, set知情数据] = useState<知情结果 | null>(null)
   const [提示, set提示] = useState<{ 左: number; 上: number; 文: string } | null>(null)
   const 壳 = useRef<HTMLDivElement | null>(null)
 
@@ -135,25 +141,96 @@ export function 视觉总览(属性: {
   }
 
   const 最新章节 = 属性.项目.统计.最新章节 || 0
-  const 章们: 章点[] = 属性.项目.卷.flatMap((卷) => 卷.章节.map((章) => ({ 编号: 章.编号, 标题: 章.标题, 字数: 章.字数 })))
+  /** 游标：0 表示跟到最新；否则截到第 N 章，所有视图都按它算 */
+  const 游标 = 读到 > 0 ? Math.min(读到, 最新章节) : 最新章节
+  const 章们: 章点[] = 属性.项目.卷
+    .flatMap((卷) => 卷.章节.map((章) => ({ 编号: 章.编号, 标题: 章.标题, 字数: 章.字数 })))
+    .filter((章) => 章.编号 <= 游标)
   const 章数 = 章们.length
   const 总字 = 章们.reduce((和, 章) => 和 + 章.字数, 0)
   const 均值 = 章数 > 0 ? Math.round(总字 / 章数) : 0
-  const 统计 = 属性.看板?.统计
-  const 伏笔们: 伏笔条[] = (属性.看板?.伏笔 ?? []).map((项) => ({
-    编号: 项.编号,
-    名称: 项.名称,
-    埋章: 项.埋章,
-    兑章: 项.兑章,
-    预定章: 项.预定章,
-    状态: 项.状态,
-    搁置章数: 项.搁置章数,
-    超期: 项.超期,
-    久置: 项.久置,
-  }))
-  const 已兑现 = 统计?.已兑现 ?? 0
-  const 伏笔总 = 统计?.总数 ?? 0
+  // 伏笔按游标重算：游标之后才兑的，到游标这一刻仍然「未兑」
+  const 伏笔们: 伏笔条[] = (属性.看板?.伏笔 ?? [])
+    .filter((项) => 项.埋章 === null || 项.埋章 <= 游标)
+    .map((项) => {
+      const 兑章 = 项.兑章.filter((章) => 章 <= 游标)
+      const 已兑 = 兑章.length > 0
+      const 搁置 = 项.埋章 === null ? 项.搁置章数 : Math.max(0, 游标 - 项.埋章)
+      return {
+        编号: 项.编号,
+        名称: 项.名称,
+        埋章: 项.埋章,
+        兑章,
+        预定章: 项.预定章.filter((章) => 章 <= 游标),
+        状态: 已兑 ? "已兑现" : "待兑现",
+        搁置章数: 已兑 ? 项.搁置章数 : 搁置,
+        超期: !已兑 && 项.超期,
+        久置: !已兑 && 项.久置,
+      }
+    })
+  const 已兑现 = 伏笔们.filter((项) => 项.状态 === "已兑现").length
+  const 伏笔总 = 伏笔们.length
   const 兑现率 = 伏笔总 > 0 ? 已兑现 / 伏笔总 : 0
+  const 超期数 = 伏笔们.filter((项) => 项.超期).length
+
+  /** 点 chN：切回编辑打开那一章；带行号就滚到那一行并闪一下。 */
+  const 跳章 = (章: number, 行?: number) => {
+    const 文件 = (属性.项目?.卷 ?? []).flatMap((卷) => 卷.章节).find((项) => 项.编号 === 章)?.文件
+    if (!文件) return
+    属性.打开文件(文件)
+    if (!行) return
+    window.setTimeout(() => {
+      const 富 = document.querySelector(".编辑器-富文本")
+      if (!富) return
+      const 块 = 富.children[Math.min(Math.max(0, 行 - 1), Math.max(0, 富.children.length - 1))] as HTMLElement | undefined
+      if (!块) return
+      块.scrollIntoView({ block: "center" })
+      块.classList.add("行高亮")
+      window.setTimeout(() => 块.classList.remove("行高亮"), 2400)
+    }, 700)
+  }
+
+  /** 把「ch27 L131」这类依据切成可点的章链。 */
+  const 章链 = (文本: string) => {
+    const 正则 = /ch\s*(\d+)(?:\s*[L＃#]\s*(\d+))?/gi
+    const 出: React.ReactNode[] = []
+    let 上 = 0
+    let 匹配: RegExpExecArray | null
+    while ((匹配 = 正则.exec(文本))) {
+      if (匹配.index > 上) 出.push(文本.slice(上, 匹配.index))
+      const 章 = Number(匹配[1])
+      const 行 = 匹配[2] ? Number(匹配[2]) : undefined
+      出.push(
+        <button key={匹配.index} className="章链" onClick={() => 跳章(章, 行)} title={"回到 ch" + 章 + (行 ? " 第 " + 行 + " 行" : "")}>
+          {"ch" + 章}
+        </button>,
+      )
+      上 = 匹配.index + 匹配[0].length
+    }
+    if (上 < 文本.length) 出.push(文本.slice(上))
+    return 出
+  }
+
+  // 知情数据：数据层给了就画矩阵，没给（或通道还没上线）就落空态。
+  useEffect(() => {
+    if (!属性.项目) return
+    const 取 = 桥.查知情
+    if (!取) {
+      set知情数据(null)
+      return
+    }
+    let 有效 = true
+    void 取(undefined, undefined, 游标)
+      .then((结果) => {
+        if (有效) set知情数据(结果)
+      })
+      .catch(() => {
+        if (有效) set知情数据(null)
+      })
+    return () => {
+      有效 = false
+    }
+  }, [属性.项目?.路径, 游标])
 
   const 渲染面板 = () => {
     if (分类 === "总览") {
@@ -170,7 +247,7 @@ export function 视觉总览(属性: {
               <div className="数项"><b>{章数}</b><span>章数</span></div>
               <div className="数项"><b>{均值.toLocaleString("zh-CN")}</b><span>平均章长</span></div>
               <div className="数项"><b>{"ch" + 最新章节}</b><span>最新章</span></div>
-              <div className={"数项" + (统计?.超期 ? " 危" : "")}><b>{统计?.超期 ?? 0}</b><span>超期伏笔</span></div>
+              <div className={"数项" + (超期数 ? " 危" : "")}><b>{超期数}</b><span>超期伏笔（到 ch{游标}）</span></div>
             </div>
           </div>
           <div className="数据块头" style={{ marginTop: 18 }}>
@@ -219,7 +296,7 @@ export function 视觉总览(属性: {
             ))}
           </div>
           {排序后.length === 0 ? <div className="数据空">这一类里没有伏笔</div> : (
-            <div className="图滚"><伏笔甘特 伏笔们={排序后} 最新章节={最新章节} 悬停={悬停} 离开={() => set提示(null)} /></div>
+            <div className="图滚"><伏笔甘特 伏笔们={排序后} 最新章节={游标} 悬停={悬停} 离开={() => set提示(null)} 点跳={(章) => 跳章(章)} /></div>
           )}
         </div>
       )
@@ -232,6 +309,10 @@ export function 视觉总览(属性: {
       const 点们: 时间点[] = 表.行
         .map((行) => ({ 日期: 取格(行, 列号[0]), 事件: 取格(行, 列号[1]), 章: 列号[2] >= 0 ? 取格(行, 列号[2]) : "" }))
         .filter((点) => 点.日期 || 点.事件)
+        .filter((点) => {
+          const 章 = Number((/\d+/.exec(点.章) ?? ["0"])[0])
+          return !点.章 || 章 <= 游标
+        })
       if (点们.length === 0) return <div className="数据空">时间线是空的</div>
       return (
         <div className="数据块">
@@ -249,16 +330,16 @@ export function 视觉总览(属性: {
         .map((行) => {
           const 名 = 取格(行, 出场命中.列号[0])
           const 末 = Number((/\d+/.exec(取格(行, 出场命中.列号[1])) ?? [""])[0])
-          return { 名, 末: Number.isFinite(末) ? 末 : 0 }
+          return { 名, 末: Number.isFinite(末) ? Math.min(末, 游标) : 0 }
         })
         .filter((项) => 项.名)
       if (人.length === 0) return <div className="数据空">出场追踪表是空的</div>
       return (
         <div className="数据块">
-          <div className="数据块头"><span>人物</span><span>{人.length} 人 · 缺席 = 最新章节 − 最后出场</span></div>
+          <div className="数据块头"><span>人物</span><span>{人.length} 人 · 缺席 = ch{游标} − 最后出场</span></div>
           <div className="人物格">
             {人.map((项) => {
-              const 缺席 = 最新章节 - 项.末
+              const 缺席 = 游标 - 项.末
               const 变化 = 属性命中
                 ? 属性命中.表.行
                     .filter((行) => 取格(行, 属性命中.列号[0]).includes(项.名))
@@ -273,7 +354,7 @@ export function 视觉总览(属性: {
                 <div key={项.名} className={"人物卡" + (缺席 > 10 ? " 久未出场" : "")}>
                   <div className="人物卡头">
                     <span className="人物卡名">{项.名}</span>
-                    <span className="徽">ch{项.末 || "—"}</span>
+                    {项.末 > 0 ? <button className="章链" onClick={() => 跳章(项.末)} title={"回到 ch" + 项.末}>{"ch" + 项.末}</button> : <span className="徽">ch—</span>}
                   </div>
                   <div className="人物卡元">
                     {缺席 > 0 ? "缺席 " + 缺席 + " 章" : "本章在场"}
@@ -298,6 +379,7 @@ export function 视觉总览(属性: {
           变化: 命中.表.表头.findIndex((头) => 头.includes("变化")) >= 0 ? 取格(行, 命中.表.表头.findIndex((头) => 头.includes("变化"))) : "",
         }))
         .filter((边) => 边.关系对)
+        .filter((边) => !边.章 || Number((/\d+/.exec(边.章) ?? ["0"])[0]) <= 游标)
       if (边们.length === 0) return <div className="数据空">关系线是空的</div>
       return (
         <div className="数据块">
@@ -308,33 +390,82 @@ export function 视觉总览(属性: {
     }
 
     if (分类 === "秘密") {
+      const 知情 = 知情数据
       const 正文 = 文件们.禁揭清单 ?? ""
-      if (!正文.trim()) return <div className="数据空">还没读到 情节/情节-03-禁揭清单.md；没有禁揭条目时这里是空的</div>
-      const 命中 = 找表(正文, ["编号"]) ?? 找表(正文, ["内容"])
-      const 条们 = 命中 ? 命中.表.行.map((行) => 命中.表.表头.map((头, 序) => ({ 列: 头, 值: 取格(行, 序) })).filter((项) => 项.值)) : []
-      if (条们.length === 0) {
-        const 行们 = 正文.split(/\r?\n/).filter((行) => 行.trim() && !行.trim().startsWith("|") && !行.trim().startsWith("---")).slice(0, 12)
+      // 有知情数据就画矩阵：谁在读到 chN 这一刻知道、依据在哪一句
+      if (知情 && 知情.条目.length > 0) {
+        const 秘密们 = 知情.秘密们.length > 0 ? 知情.秘密们 : Array.from(new Set(知情.条目.map((条) => 条.秘密)))
+        const 人 = 知情.人.length > 0 ? 知情.人 : Array.from(new Set(知情.条目.map((条) => 条.人)))
+        const 到游标 = 知情.条目.filter((条) => 条.何时知道 === null || 条.何时知道 <= 游标)
         return (
           <div className="数据块">
-            <div className="数据块头"><span>秘密</span><span>禁揭清单（没有表格，按段落列）</span></div>
-            {行们.map((行, 序) => <div key={序} className="秘密卡">{行.trim()}</div>)}
+            <div className="数据块头">
+              <span>秘密矩阵</span>
+              <span>{秘密们.length} 条秘密 · 读到 ch{游标} 为止的知情状态</span>
+            </div>
+            <div className="秘密格">
+              {秘密们.map((秘密) => {
+                const 该条 = 到游标.filter((条) => 条.秘密 === 秘密)
+                const 知道 = 该条.map((条) => 条.人)
+                const 不知道 = 人.filter((名) => !知道.includes(名))
+                return (
+                  <div key={秘密} className="秘密卡">
+                    <div className="秘密卡头">
+                      <b>{秘密}</b>
+                      <span className="徽">{知道.length} 人知道 / {不知道.length} 人不知道</span>
+                    </div>
+                    <div className="秘密双栏">
+                      <div className="秘密栏">
+                        <div className="秘密栏头">知情</div>
+                        {该条.length === 0 ? <div className="数据空 小">读到 ch{游标} 为止还没人知道</div> : null}
+                        {该条.map((条, 序) => (
+                          <div key={序} className="秘密卡行">
+                            <b>{条.人}</b>
+                            <span className="秘密时">{条.何时知道 === null ? "何时知道未记" : "ch" + 条.何时知道}</span>
+                            {条.依据 ? <span className="秘密依">依据：{章链(条.依据)}</span> : null}
+                          </div>
+                        ))}
+                      </div>
+                      <div className="秘密栏">
+                        <div className="秘密栏头">不知情</div>
+                        {不知道.length === 0 ? <div className="数据空 小">都知道了</div> : null}
+                        {不知道.map((名) => <div key={名} className="秘密卡行"> {名}</div>)}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           </div>
         )
       }
+      const 命中 = 找表(正文, ["编号"]) ?? 找表(正文, ["内容"])
+      const 条们 = 命中 ? 命中.表.行.map((行) => 命中.表.表头.map((头, 序) => ({ 列: 头, 值: 取格(行, 序) })).filter((项) => 项.值)) : []
       return (
         <div className="数据块">
-          <div className="数据块头"><span>秘密</span><span>{条们.length} 条禁揭</span></div>
-          <div className="秘密格">
-            {条们.map((条, 序) => (
-              <div key={序} className="秘密卡">
-                {条.map((项, 序2) => (
-                  <div key={序2} className={序2 === 0 ? "秘密卡头" : "秘密卡行"}>
-                    <b>{项.列}</b> {项.值}
+          <div className="数据块头"><span>秘密矩阵</span><span>还没有知情数据</span></div>
+          <div className="数据空">
+            还没读到台账/知情台账.md 里的「秘密 / 人 / 何时知道 / 依据」表，所以这里画不出矩阵。
+            <br />
+            去补一张知情台账，这里就会按「读到 ch{游标}」的视角分两栏：谁知道、依据在哪一句。
+          </div>
+          {条们.length > 0 ? (
+            <>
+              <div className="数据块头" style={{ marginTop: 14 }}><span>禁揭清单</span><span>{条们.length} 条 · 只读</span></div>
+              <div className="秘密格">
+                {条们.map((条, 序) => (
+                  <div key={序} className="秘密卡">
+                    {条.map((项, 序2) => (
+                      <div key={序2} className={序2 === 0 ? "秘密卡头" : "秘密卡行"}>
+                        <b>{项.列}</b>
+                        <span>{章链(项.值)}</span>
+                      </div>
+                    ))}
                   </div>
                 ))}
               </div>
-            ))}
-          </div>
+            </>
+          ) : null}
         </div>
       )
     }
@@ -385,7 +516,7 @@ export function 视觉总览(属性: {
     const 行们: 热力行[] = 命中.表.行
       .map((行) => ({
         名称: 取格(行, 命中.列号[0]),
-        章们: 解析出场章(记录列 >= 0 ? 取格(行, 记录列) : "", 最新章节),
+        章们: 解析出场章(记录列 >= 0 ? 取格(行, 记录列) : "", 游标),
       }))
       .filter((行) => 行.名称)
     if (行们.length === 0) return <div className="数据空">出场追踪表是空的</div>
@@ -394,7 +525,7 @@ export function 视觉总览(属性: {
     return (
       <div className="数据块">
         <div className="数据块头"><span>出场热力</span><span>行=人物，列=章；深色就是有出场</span></div>
-        <div className="图滚"><热力矩阵 行们={行们} 总章={Math.max(1, 最新章节)} /></div>
+        <div className="图滚"><热力矩阵 行们={行们} 总章={Math.max(1, 游标)} /></div>
       </div>
     )
   }
@@ -420,6 +551,30 @@ export function 视觉总览(属性: {
           </div>
         </div>
         <div className="数据体">
+          <div className="游标行">
+            <span className="游标标签">
+              <图标 名="眼睛" 大小={14} />
+              读到
+            </span>
+            <input
+              className="游标滑块"
+              type="range"
+              min={1}
+              max={Math.max(1, 最新章节)}
+              value={游标}
+              onChange={(事件) => set读到(Number(事件.target.value))}
+              title="拖动只看第 N 章为止；不剧透后面的"
+            />
+            <span className="游标值">
+              ch{游标} / 共 {最新章节} 章
+            </span>
+            {游标 !== 最新章节 ? (
+              <button className="小按钮" onClick={() => set读到(0)} title="把游标放回最新章">
+                跟到最新
+              </button>
+            ) : null}
+            <span className="游标提示">所有视图都按这个游标算</span>
+          </div>
           {渲染面板()}
           {提示 ? <div className="图表提示" style={{ left: 提示.左, top: 提示.上 }}>{提示.文}</div> : null}
         </div>

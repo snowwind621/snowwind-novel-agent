@@ -101,6 +101,17 @@ export const 工具表: 工具定义[] = [
     },
   },
   {
+    名称: "query_knowledge",
+    中文名: "查知情",
+    说明: "查「谁知道哪条秘密、什么时候知道的」：返回每条秘密的知情名单、不知情的人、依据；可限定截至第几章。",
+    写盘: false,
+    参数: {
+      秘密: { 类型: "字符串", 说明: "只看这条秘密（模糊匹配名称），留空＝全部" },
+      人: { 类型: "字符串", 说明: "只看这个人相关的条目（模糊匹配人名）" },
+      截至章: { 类型: "数字", 说明: "只算截至第几章已经知道的；留空＝按全书算" },
+    },
+  },
+  {
     名称: "write_chapter",
     中文名: "写章节",
     说明: "把整章正文覆盖写成给定内容并提交。会改动正文文件，属于写盘工具，必须先得到作者确认。",
@@ -206,6 +217,7 @@ export interface 工具环境 {
   查台账: (台账: string, 关键词: string) => Promise<{ 文本: string; 行数: number }>
   查设定: (名: string) => Promise<{ 文本: string; 找到: boolean }>
   查伏笔: (只看: string) => Promise<string>
+  查知情: (秘密: string, 人: string, 截至章: number | null) => Promise<string>
   写章节: (章节号: number, 正文: string) => Promise<{ 成功: boolean; 说明: string }>
 }
 
@@ -308,6 +320,10 @@ export async function 跑工具(名: string, 原始参数: unknown, 环境: 工�
       case "query_setting": {
         const 数据 = await 环境.查设定(String(参数.名))
         return 收尾(定义, 参数, 轮次, 数据.文本, 数据.找到 ? "命中 1 张卡" : "没找到这张卡")
+      }
+      case "query_knowledge": {
+        const 文本 = await 环境.查知情(String(参数.秘密 ?? ""), String(参数.人 ?? ""), 参数.截至章 === undefined ? null : Number(参数.截至章))
+        return 收尾(定义, 参数, 轮次, 文本, "已按知情状态汇总")
       }
       case "query_foreshadow": {
         const 文本 = await 环境.查伏笔(String(参数.只看 ?? ""))

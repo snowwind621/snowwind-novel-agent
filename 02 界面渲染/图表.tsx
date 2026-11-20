@@ -94,7 +94,7 @@ export function 字数柱(属性: { 章们: 章点[]; 均值: number; 悬停: �
 }
 
 /** 伏笔生命周期甘特：横轴章号，埋点圆 / 兑点方，超期整条红、久置整条橙。 */
-export function 伏笔甘特(属性: { 伏笔们: 伏笔条[]; 最新章节: number; 悬停: 悬停; 离开: () => void }) {
+export function 伏笔甘特(属性: { 伏笔们: 伏笔条[]; 最新章节: number; 悬停: 悬停; 离开: () => void; 点跳?: (章: number) => void }) {
   const 左 = 58
   const 右 = 16
   const 行高 = 24
@@ -143,7 +143,14 @@ export function 伏笔甘特(属性: { 伏笔们: 伏笔条[]; 最新章节: num
               {项.编号}
             </text>
             <line className={条类} x1={位(起)} y1={y} x2={位(兑)} y2={y} />
-            <circle className={"甘特点" + (项.超期 ? " 超期" : 项.久置 ? " 久置" : "")} cx={位(起)} cy={y} r={4.5} />
+            <circle
+              className={"甘特点" + (项.超期 ? " 超期" : 项.久置 ? " 久置" : "")}
+              cx={位(起)}
+              cy={y}
+              r={4.5}
+              style={属性.点跳 ? { cursor: "pointer" } : undefined}
+              onClick={属性.点跳 ? () => 属性.点跳?.(起) : undefined}
+            />
             <rect
               className={"甘特兑" + (项.兑章.length > 0 ? " 已兑" : 项.超期 ? " 超期" : 项.久置 ? " 久置" : "")}
               x={位(兑) - 4.5}

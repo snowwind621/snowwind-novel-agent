@@ -35,6 +35,19 @@ export interface 集群成员 {
   最近: string
 }
 
+export interface 知情条目 {
+  秘密: string
+  人: string
+  何时知道: number | null
+  依据: string
+}
+
+export interface 知情结果 {
+  条目: 知情条目[]
+  秘密们: string[]
+  人: string[]
+}
+
 export interface 派活成员结果 {
   成员: string
   角色: string
@@ -137,6 +150,8 @@ export interface 桥接口 {
   书库文件树: () => Promise<文件树结果>
   书库读文件: (相对路径: string) => Promise<文件内容>
   书库写文件: (相对路径: string, 内容: string) => Promise<{ 成功: boolean; 说明: string }>
+  /** 知情矩阵（谁知道哪条秘密、什么时候知道）；数据层还没上线时可能是 undefined */
+  查知情?: (秘密?: string, 人?: string, 截至章?: number) => Promise<知情结果>
   书库Git状态: () => Promise<{ 有项目: boolean; 是Git仓库: boolean }>
   初始化书库Git: () => Promise<{ 成功: boolean; 说明: string }>
   书架: () => Promise<书架项[]>

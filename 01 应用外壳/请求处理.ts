@@ -11,7 +11,7 @@ import { 记事件 } from "../13 共享黑板/事件日志"
 import { 拉模型清单, 流式对话, 流式对话带工具, 取调用策略 } from "../04 模型接入/网关客户端"
 import type { 对话消息 } from "../04 模型接入/网关客户端"
 import { 工具声明们, 跑工具, 解析约定块 } from "../06 智能体运行时/工具执行"
-import { 投影台账, 投影设定, 投影伏笔 } from "../06 智能体运行时/书库投影"
+import { 投影台账, 投影设定, 投影伏笔, 投影知情 } from "../06 智能体运行时/书库投影"
 import type { 工具环境 } from "../06 智能体运行时/工具执行"
 import { 组装系统提示 } from "../05 编排内核/章节提示词"
 import { 同步章节台账 } from "../09 台账同步/同步台账"
@@ -329,6 +329,18 @@ export function 创建请求处理(
       }
     },
 
+    [通道.书库查知情]: async (秘密?: string, 人?: string, 截至章?: number) => {
+      if (!状态.项目) return { 有台账: false, 秘密: [], 候选: [], 说明: "尚未打开书库" }
+      const 全 = 投影知情(状态.项目.路径, 截至章 && 截至章 > 0 ? 截至章 : undefined)
+      if (!秘密 && !人) return 全
+      const 秘密们 = 全.秘密.filter((项: any) => {
+        const 命中秘密 = 秘密 ? String(项.名称).includes(秘密) : true
+        const 命中人 = 人 ? [...项.知情.map((x: any) => x.人), ...项.不知情].some((名: any) => String(名).includes(人)) : true
+        return 命中秘密 && 命中人
+      })
+      return { ...全, 秘密: 秘密们 }
+    },
+
     [通道.书架]: async (): Promise<书架项[]> =>
       读书架(数据目录).filter((项) => fs.existsSync(path.join(项.路径, 路径.清单))),
 
@@ -516,6 +528,29 @@ export function 创建请求处理(
           .slice(0, 80)
           .map((项) => 项.编号 + " " + 项.名称 + "｜" + 项.状态 + "｜埋 ch" + (项.埋章 ?? "—") + "｜搁置 " + 项.搁置章数 + "｜间隔 " + (项.参考间隔 ?? "—") + (项.超期 ? "｜超期" : 项.久置 ? "｜久置" : ""))
         return "共 " + 选.length + " 条（全书 " + 全.length + " 条）：\n" + 行们.join("\n")
+      },
+      查知情: async (秘密, 人, 截至章) => {
+        if (!状态.项目) return "尚未打开书库。"
+        const 截 = 截至章 && 截至章 > 0 ? 截至章 : undefined
+        const 投影 = 投影知情(状态.项目.路径, 截)
+        const 秘筛 = String(秘密 ?? "").trim()
+        const 人筛 = String(人 ?? "").trim()
+        const 选中 = 投影.秘密.filter((项) => !秘筛 || 项.名称.includes(秘筛))
+        const 段: string[] = [投影.说明]
+        for (const 项 of 选中) {
+          const 知情 = 项.知情.filter((条) => !人筛 || 条.人.includes(人筛))
+          if (人筛 && 知情.length === 0) continue
+          段.push(
+            "【" + 项.名称 + "】",
+            "  知情：" + (知情.length > 0 ? 知情.map((条) => 条.人 + (条.何时知道 ? "（ch" + 条.何时知道 + "）" : "") + (条.依据 ? "｜" + 条.依据 : "")).join("；") : "（无）"),
+            "  不知情：" + (项.不知情.length > 0 ? 项.不知情.slice(0, 12).join("、") : "（都知道了）"),
+          )
+        }
+        if (选中.length === 0 && 投影.候选.length > 0) {
+          段.push("", "可补成知情台账的候选（来自禁揭清单，只是提示）：")
+          for (const 项 of 投影.候选.slice(0, 8)) 段.push("  · " + 项.名称 + (项.可能涉及.length ? "（可能涉及：" + 项.可能涉及.join("、") + "）" : ""))
+        }
+        return 段.join("\n")
       },
       写章节: async (章节号, 正文) => {
         const 结果 = await 处理[通道.保存章节](章节号, 正文)

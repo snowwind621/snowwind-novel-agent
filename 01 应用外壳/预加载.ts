@@ -26,6 +26,8 @@ contextBridge.exposeInMainWorld("桥", {
   书库读文件: (相对路径: string) => ipcRenderer.invoke(通道.书库读文件, 相对路径),
   书库写文件: (相对路径: string, 内容: string) => ipcRenderer.invoke(通道.书库写文件, 相对路径, 内容),
   书架: () => ipcRenderer.invoke(通道.书架),
+  查知情: (秘密?: string, 人?: string, 截至章?: number) =>
+    ipcRenderer.invoke(通道.书库查知情, 秘密, 人, 截至章),
   移出书架: (路径: string) => ipcRenderer.invoke(通道.书架移除, 路径),
   监听派活: (回调: (事件: unknown) => void) => {
     const 处理 = (_事件: unknown, 载荷: unknown) => 回调(载荷)
