@@ -1,6 +1,7 @@
 // 只负责一件事：把智能体集群摊开，并从这里派活。
 import React, { useState } from "react"
 import type { 集群成员 } from "./接口"
+import { 图标 } from "./图标"
 
 export function 集群面板(属性: {
   成员们: 集群成员[]
@@ -41,19 +42,23 @@ export function 集群面板(属性: {
   return (
     <div style={{ padding: "10px 12px 0" }}>
       <div className="统计行">
-        <span className="胶囊">成员 {属性.成员们.length}</span>
+        <span className="胶囊">
+          <图标 名="用户群" 大小={13} /> 成员 {属性.成员们.length}
+        </span>
         <span className="胶囊">章节 ch{章}</span>
         {属性.忙 ? <span className="胶囊 警">正在召集…</span> : null}
-        <button className="胶囊" onClick={属性.看待裁定}>
-          {属性.待裁定数} 条待裁定
+        <button className="胶囊" onClick={属性.看待裁定} title="看这一章的待裁定建议">
+          <图标 名="灯泡" 大小={13} /> {属性.待裁定数} 条待裁定
         </button>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
         <button disabled={属性.忙} onClick={快捷("准备写第 " + (章 + 1) + " 章：给出本章目标、必须兑现的伏笔、不能写的东西、谁在场。")}>
+          <图标 名="播放" 大小={14} />
           准备第 {章 + 1} 章
         </button>
         <button disabled={属性.忙} onClick={快捷("以现有档案为准，列出第 " + 章 + " 章最可能的三处设定矛盾或称呼错误，每条给出处。")}>
+          <图标 名="搜索" 大小={14} />
           查一遍矛盾
         </button>
       </div>
@@ -90,8 +95,12 @@ export function 集群面板(属性: {
         <div key={成员.id} className="成员项">
           <div className="成员头">
             <span className="成员名">{成员.名称}</span>
-            <button className="小按钮" onClick={() => 改(成员)}>改</button>
-            <button className="小按钮" onClick={() => 删(成员)}>删</button>
+            <button className="小按钮 图标按钮" onClick={() => 改(成员)} title="改这一位">
+              <图标 名="铅笔" 大小={14} />
+            </button>
+            <button className="小按钮 图标按钮" onClick={() => 删(成员)} title="从集群移除这一位">
+              <图标 名="垃圾桶" 大小={14} />
+            </button>
             <span className="徽">{成员.角色}</span>
           </div>
           <div className="成员尾">{成员.管辖[0] ?? "—"}</div>
@@ -103,8 +112,12 @@ export function 集群面板(属性: {
         <div key={成员.id} className="成员项">
           <div className="成员头">
             <span className="成员名">{成员.名称}</span>
-            <button className="小按钮" onClick={() => 改(成员)}>改</button>
-            <button className="小按钮" onClick={() => 删(成员)}>删</button>
+            <button className="小按钮 图标按钮" onClick={() => 改(成员)} title="改这一位">
+              <图标 名="铅笔" 大小={14} />
+            </button>
+            <button className="小按钮 图标按钮" onClick={() => 删(成员)} title="从集群移除这一位">
+              <图标 名="垃圾桶" 大小={14} />
+            </button>
             <span className="徽">人物</span>
           </div>
           <div className="成员尾">{成员.人格.slice(0, 42)}…</div>
@@ -114,7 +127,8 @@ export function 集群面板(属性: {
 
       <div style={{ marginTop: 14 }}>
         <button style={{ width: "100%" }} onClick={() => set新开((旧) => !旧)}>
-          {新开 ? "取消新建" : "＋ 新建智能体"}
+          <图标 名={新开 ? "关闭" : "加号"} 大小={14} />
+          {新开 ? "取消新建" : "新建智能体"}
         </button>
         {新开 ? (
           <div style={{ marginTop: 8 }}>

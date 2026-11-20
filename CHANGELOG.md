@@ -5,6 +5,10 @@
 
 ## [未发布]
 
+## [0.3.0] - 2026-11-20
+
+第二个发布版：界面重做、设置体系、打包、单元格化。
+
 ### 新增
 
 - **改写循环**：编辑器里选中一段（或把光标放在某一段里），输入一句要求（"更冷一点""删掉解释"），
@@ -96,5 +100,6 @@
 
 ---
 
-[未发布]: https://github.com/snowwind621/snowwind-novel-agent/compare/v0.1.0...HEAD
+[未发布]: https://github.com/snowwind621/snowwind-novel-agent/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/snowwind621/snowwind-novel-agent/releases/tag/v0.3.0
 [0.1.0]: https://github.com/snowwind621/snowwind-novel-agent/releases/tag/v0.1.0

@@ -1,13 +1,14 @@
 // 只负责一件事：拼起三栏，持有全局状态（当前章、看板、集群、对话）。
 import React, { useEffect, useRef, useState } from "react"
-import { 桥, 千字, 时刻 } from "./接口"
-import type { 项目摘要, 看板数据, 设置, 集群成员, 对话条目, 书架项, 文件内容, 待裁定章 } from "./接口"
+import { 桥, 千字, 时刻, 应用外观, 解析主题, 盯系统主题, 默认设置, 补齐设置 } from "./接口"
+import type { 项目摘要, 看板数据, 设置, 外观设置, 集群成员, 对话条目, 书架项, 文件内容, 待裁定章 } from "./接口"
 import { 左栏 } from "./左栏"
 import type { 左页 } from "./左栏"
 import { 正文编辑 } from "./正文编辑"
 import { 文件视图 } from "./文件视图"
 import { AI面板 } from "./AI面板"
 import { 设置面板 } from "./设置面板"
+import { 图标 } from "./图标"
 
 function 读宽度(键: string, 默认: number, 下限: number, 上限: number): number {
   const 存 = Number(localStorage.getItem(键))
@@ -40,7 +41,7 @@ export function 三栏布局() {
   const [状态字, set状态字] = useState("")
   const [设定, set设定] = useState<设置 | null>(null)
   const [显示设置, set显示设置] = useState(false)
-  const [主题, set主题] = useState<string>(document.documentElement.dataset.主题 ?? "暗")
+  const [实主题, set实主题] = useState<string>(document.documentElement.dataset.主题 ?? "暗")
   const [成员们, set成员们] = useState<集群成员[]>([])
   const [派活中, set派活中] = useState(false)
   const [显示导出, set显示导出] = useState(false)
@@ -126,12 +127,35 @@ export function 三栏布局() {
     return 卸载
   }, [])
 
-  const 切主题 = () => {
-    const 新主题 = 主题 === "暗" ? "亮" : "暗"
-    set主题(新主题)
-    document.documentElement.dataset.主题 = 新主题
-    localStorage.setItem("主题", 新主题)
+  /** 外观一变就套上去：data-* + CSS 变量 + 本地缓存。 */
+  const 套用外观 = (外观: 外观设置) => {
+    应用外观(外观)
+    set实主题(解析主题(外观.主题))
   }
+
+  /** 顶栏日/夜按钮：等价于改设置里的主题，两处永远同一份状态。 */
+  const 切主题 = () => {
+    const 当前 = 设定?.外观.主题 ?? "暗"
+    const 新主题: 外观设置["主题"] = 解析主题(当前) === "暗" ? "亮" : "暗"
+    if (!设定) {
+      const 兜底: 外观设置 = { ...默认设置.外观, 主题: 新主题 }
+      套用外观(兜底)
+      return
+    }
+    const 新设定: 设置 = { ...设定, 外观: { ...设定.外观, 主题: 新主题 } }
+    套用外观(新设定.外观)
+    set设定(新设定)
+    void 桥.保存设置(新设定).then((存) => {
+      set设定(存)
+      套用外观(存.外观)
+    })
+  }
+
+  // 跟随系统：系统换深浅色时重刷一次
+  useEffect(() => {
+    if (!设定 || 设定.外观.主题 !== "跟随系统") return
+    return 盯系统主题(() => 套用外观(设定.外观))
+  }, [设定?.外观.主题, 设定?.外观.界面字号])
 
   // 宽度落 localStorage：重开保持上次拖到的位置。
   useEffect(() => {
@@ -147,7 +171,9 @@ export function 三栏布局() {
     const 移动 = (事件: PointerEvent) => {
       const 记 = 拖拽.current
       if (!记) return
-      const 差 = 事件.clientX - 记.起X
+      // 界面缩放会把鼠标位移放大：除回去，拖到的位置才跟手
+      const 缩放 = Number(getComputedStyle(document.documentElement).zoom) || 1
+      const 差 = (事件.clientX - 记.起X) / 缩放
       if (记.侧 === "左") set左宽(夹住(记.起宽 + 差, 220, 460))
       else set右宽(夹住(记.起宽 - 差, 320, 640))
     }
@@ -198,7 +224,16 @@ export function 三栏布局() {
 
   useEffect(() => {
     void (async () => {
-      set设定(await 桥.读取设置())
+      const 已存设置 = 补齐设置(await 桥.读取设置())
+      // 深链 ?主题=亮 只压过这一次显示，不写回设置
+      const 链接主题 = new URLSearchParams(location.search).get("主题")
+      const 生效设置: 设置 =
+        链接主题 === "亮" || 链接主题 === "暗"
+          ? { ...已存设置, 外观: { ...已存设置.外观, 主题: 链接主题 } }
+          : 已存设置
+      set设定(生效设置)
+      应用外观(生效设置.外观, 链接主题 !== "亮" && 链接主题 !== "暗")
+      set实主题(解析主题(生效设置.外观.主题))
       set书架(await 桥.书架())
       const 已开 = await 桥.当前项目()
       if (已开) {
@@ -361,7 +396,7 @@ export function 三栏布局() {
     try {
       await 桥.续写({
         请求号,
-        模型: 设定?.分工.执笔 ?? "",
+        模型: 设定?.模型.分工.执笔 ?? "",
         章节号,
         标题,
         已有正文: 正文,
@@ -386,7 +421,7 @@ export function 三栏布局() {
     try {
       await 桥.改写({
         请求号,
-        模型: 设定?.分工.执笔 ?? "",
+        模型: 设定?.模型.分工.执笔 ?? "",
         章节号,
         标题,
         原文: 参数.原文,
@@ -447,12 +482,6 @@ export function 三栏布局() {
     }
   }
 
-  const 追加正文 = (文本: string) => {
-    set正文((旧) => 旧.replace(/\s+$/, "") + "\n\n" + 文本.trim() + "\n")
-    set脏(true)
-    set状态字("已插入正文，记得保存")
-  }
-
   const 清空对话 = () => {
     if (!window.confirm("清空全部对话记录？清掉就找不回来了。")) return
     set消息们([])
@@ -492,11 +521,15 @@ export function 三栏布局() {
           <span className="微信息">尚未打开书库</span>
         )}
         <div className="顶栏右">
-          <button onClick={切主题} title="切换明暗">
-            {主题 === "暗" ? "☀ 日间" : "🌙 夜间"}
+          <button onClick={切主题} title="切换明暗（等价于设置里的主题）">
+            <图标 名={实主题 === "暗" ? "月亮" : "太阳"} />
+            {实主题 === "暗" ? "夜间" : "日间"}
           </button>
           <div style={{ position: "relative" }}>
-            <button onClick={() => set显示导出((旧) => !旧)}>导出</button>
+            <button onClick={() => set显示导出((旧) => !旧)} title="导出整本书">
+              <图标 名="下载" />
+              导出
+            </button>
             {显示导出 ? (
               <div className="菜单">
                 {[
@@ -512,9 +545,16 @@ export function 三栏布局() {
               </div>
             ) : null}
           </div>
-          <button onClick={() => set显示设置(true)}>设置</button>
+          <button onClick={() => set显示设置(true)} title="打开设置">
+            <图标 名="设置" />
+            设置
+          </button>
           <div style={{ position: "relative" }}>
-            <button onClick={() => set显示书架((旧) => !旧)}>打开书库 ▾</button>
+            <button onClick={() => set显示书架((旧) => !旧)} title="打开或切换书库">
+              <图标 名="文件夹打开" />
+              打开书库
+              <图标 名="箭头下" 大小={14} />
+            </button>
             {显示书架 ? (
               <div className="菜单" style={{ minWidth: 240 }}>
                 {书架.length === 0 ? <div className="菜单项" style={{ color: "var(--字弱)" }}>还没有打开过书</div> : null}
@@ -605,7 +645,6 @@ export function 三栏布局() {
             正文={正文}
             设定={设定}
             看板={看板}
-            追加正文={追加正文}
             采纳改写={采纳改写}
             取选区={() => {
               if (!选区 || 选区.终点 <= 选区.起点) return null
@@ -632,6 +671,7 @@ export function 三栏布局() {
           关闭={() => set显示设置(false)}
           存好={(新设定) => {
             set设定(新设定)
+            套用外观(新设定.外观)
             set显示设置(false)
           }}
           成员们={成员们}

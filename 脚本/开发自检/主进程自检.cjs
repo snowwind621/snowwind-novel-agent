@@ -57,7 +57,7 @@ async function 主() {
   结果.看板 = 看板.统计
 
   const 设置 = await 处理器.get("设置/读取")(事件)
-  结果.设置 = { 网关: 设置.网关地址, 助手: 设置.分工.助手, 记住的书: path.basename(设置.项目路径 || "") }
+  结果.设置 = { 网关: 设置.模型.网关地址, 助手: 设置.模型.分工.助手, 记住的书: path.basename(设置.书库.上次路径 || "") }
 
   const 模型 = await 处理器.get("模型/清单")(事件)
   结果.模型清单 = Array.isArray(模型) ? { 数量: 模型.length, 含目标: 模型.includes("cnwrokbuddy-ds") } : 模型

@@ -1,6 +1,7 @@
 // 只负责一件事：把书库目录树画成可折叠的列表（只管展开与点击，不读盘）。
 import React, { useState } from "react"
 import type { 文件节点 } from "./接口"
+import { 图标 } from "./图标"
 
 function 大小字(字节: number): string {
   if (字节 < 1024) return 字节 + " B"
@@ -23,7 +24,8 @@ export function 文件树(属性: {
       return (
         <div key={节点.相对路径}>
           <div className="树行 树目录" style={缩进} onClick={() => 切(节点.相对路径)} title={节点.相对路径}>
-            <span className="树箭头">{开着 ? "▾" : "▸"}</span>
+            <图标 名="箭头下" 大小={14} 类名={开着 ? "" : "折右"} />
+            <图标 名={开着 ? "文件夹打开" : "文件夹"} 大小={15} />
             <span className="树名">{节点.名称}</span>
             <span className="树数">{节点.子?.length ?? 0}</span>
           </div>
@@ -39,7 +41,7 @@ export function 文件树(属性: {
         onClick={() => 属性.打开(节点.相对路径)}
         title={节点.相对路径}
       >
-        <span className="树箭头">·</span>
+        <图标 名="书本" 大小={15} />
         <span className="树名">{节点.名称}</span>
         <span className="树数">{大小字(节点.大小)}</span>
       </div>

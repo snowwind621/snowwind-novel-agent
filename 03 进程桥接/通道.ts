@@ -34,6 +34,20 @@ export const 推送事件 = {
   派活进度: "集群/进度",
 } as const
 
+/** 一次请求的用量。网关不给就整块没有，界面显示「—」，绝不瞎算。 */
+export interface 用量 {
+  输入: number
+  输出: number
+  总计: number
+  /** 缓存命中；网关没这个字段就是 null */
+  缓存命中: number | null
+  /** 缓存未命中；能由「输入 - 命中」推出来才算，推不出就是 null */
+  缓存未命中: number | null
+}
+
+/** 对话流的增量类型。「用量」的文本是一段 JSON。 */
+export type 对话事件类型 = "思考" | "正文" | "结束" | "错误" | "用量"
+
 export interface 书架项 {
   路径: string
   书名: string
@@ -133,11 +147,71 @@ export interface 看板数据 {
   待裁定?: 待裁定章[]
 }
 
-export interface 设置 {
+export interface 外观设置 {
+  /** 暗 / 亮 / 跟随系统（跟随系统时按 matchMedia 解析成暗或亮） */
+  主题: "暗" | "亮" | "跟随系统"
+  /** 界面基准字号，px */
+  界面字号: number
+  编辑器字体: "宋体" | "黑体" | "系统"
+  /** 正文字号，px */
+  编辑器字号: number
+  /** 正文行距（倍数） */
+  行距: number
+  /** 整界面缩放，1 = 原始 */
+  界面缩放: number
+}
+
+export interface 编辑器设置 {
+  默认模式: "源码" | "分屏" | "预览"
+  /** 0 = 关掉自动保存 */
+  自动保存秒: number
+  显示字数: boolean
+}
+
+export interface 模型设置 {
   网关地址: string
   API密钥: string
   分工: { 总编: string; 执笔: string; 审校: string; 助手: string }
-  项目路径: string
+  超时秒: number
+  重试次数: number
+  重试间隔秒: number
+  温度: number
+  最大输出词元: number
+}
+
+export interface 上下文设置 {
+  单卡注入字数: number
+  历史保留条数: number
+  /** 0.3 ~ 1：上下文用到这个比例就开始压缩 */
+  压缩触发比例: number
+  压缩后保留条数: number
+}
+
+export interface 技能项 {
+  名称: string
+  内容: string
+  默认附加: boolean
+}
+
+export interface 智能体设置 {
+  并发数: number
+  阵容上限: number
+  人格: { 总编: string; 审校: string; 伏笔: string; 台账: string; 地点: string; 物品: string }
+  技能: 技能项[]
+}
+
+export interface 书库设置 {
+  上次路径: string
+}
+
+export interface 设置 {
+  版本: 1
+  外观: 外观设置
+  编辑器: 编辑器设置
+  模型: 模型设置
+  上下文: 上下文设置
+  智能体: 智能体设置
+  书库: 书库设置
 }
 
 /** 书库里的一个条目：目录带 子，文件带 大小。 */
@@ -166,4 +240,6 @@ export interface 对话请求 {
   模型: string
   系统提示: string
   用户输入: string
+  /** 覆盖设置里的温度（压缩摘要要 0）；不给就用设置里的值 */
+  温度?: number
 }

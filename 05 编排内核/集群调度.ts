@@ -2,7 +2,7 @@
 import { 执行成员 } from "../06 智能体运行时/执行器"
 import type { 集群成员 } from "../06 智能体运行时/成员目录"
 import type { 设置 } from "../03 进程桥接/通道"
-import { 流式对话 } from "../04 模型接入/网关客户端"
+import { 流式对话, 取调用策略 } from "../04 模型接入/网关客户端"
 import { 记一笔 } from "../06 智能体运行时/会话簿"
 
 export interface 派活参数 {
@@ -14,6 +14,7 @@ export interface 派活参数 {
   任务: string
   成员们: 集群成员[]
   设置: 设置
+  /** 覆盖设置里的并发数（默认取 设置.智能体.并发数） */
   并发?: number
   回调?: (事件: { 成员: string; 角色: string; 阶段: "开始" | "完成"; 完成数: number; 总数: number }) => void
 }
@@ -29,7 +30,7 @@ export interface 派活结果 {
 async function 池<T, R>(项: T[], 并发: number, 函数: (值: T) => Promise<R>): Promise<R[]> {
   const 结果: R[] = new Array(项.length)
   let 下一个 = 0
-  const 工人 = Array.from({ length: Math.min(并发, 项.length) }, async () => {
+  const 工人 = Array.from({ length: Math.max(1, Math.min(并发, 项.length)) }, async () => {
     for (;;) {
       const 序 = 下一个++
       if (序 >= 项.length) return
@@ -40,11 +41,11 @@ async function 池<T, R>(项: T[], 并发: number, 函数: (值: T) => Promise<R
   return 结果
 }
 
-/** 默认阵容：总编 + 伏笔 + 审校 + 出场最多的人物。 */
+/** 默认阵容：总编 + 伏笔 + 审校 + 出场最多的人物；上限由设置里的「阵容上限」决定。 */
 export function 选阵容(成员们: 集群成员[], 上限 = 9): 集群成员[] {
   const 固定 = 成员们.filter((x) => ["总编", "伏笔", "审校"].includes(x.角色))
   const 人物 = 成员们.filter((x) => x.角色 === "人物")
-  return [...固定, ...人物].slice(0, 上限)
+  return [...固定, ...人物].slice(0, Math.max(1, 上限))
 }
 
 function 取关键词(参数: 派活参数): string[] {
@@ -60,9 +61,11 @@ export async function 派活(参数: 派活参数): Promise<派活结果> {
   const 起 = Date.now()
   const 阵容 = 参数.成员们
   const 关键词 = 取关键词(参数)
+  const 策略 = 取调用策略(参数.设置.模型)
+  const 并发 = 参数.并发 ?? 参数.设置.智能体.并发数
 
   let 完成数 = 0
-  const 各自 = await 池(阵容, 参数.并发 ?? 4, async (成员) => {
+  const 各自 = await 池(阵容, 并发, async (成员) => {
     参数.回调?.({ 成员: 成员.名称, 角色: 成员.角色, 阶段: "开始", 完成数, 总数: 阵容.length })
     const 结果 = await 执行成员({
       根目录: 参数.根目录,
@@ -70,9 +73,12 @@ export async function 派活(参数: 派活参数): Promise<派活结果> {
       成员,
       任务: 参数.任务,
       关键词,
-      基址: 参数.设置.网关地址,
-      密钥: 参数.设置.API密钥,
-      模型: 成员.角色 === "总编" ? 参数.设置.分工.总编 : 成员.角色 === "审校" ? 参数.设置.分工.审校 : 参数.设置.分工.助手,
+      基址: 参数.设置.模型.网关地址,
+      密钥: 参数.设置.模型.API密钥,
+      策略,
+      单卡注入字数: 参数.设置.上下文.单卡注入字数,
+      技能: 参数.设置.智能体.技能,
+      模型: 成员.角色 === "总编" ? 参数.设置.模型.分工.总编 : 成员.角色 === "审校" ? 参数.设置.模型.分工.审校 : 参数.设置.模型.分工.助手,
       章节号: 参数.章节号,
     })
     完成数++
@@ -99,9 +105,11 @@ async function 合成开写包(
   let 正文 = ""
   try {
     await 流式对话({
-      基址: 参数.设置.网关地址,
-      密钥: 参数.设置.API密钥,
-      模型: 参数.设置.分工.总编,
+      ...取调用策略(参数.设置.模型),
+      温度: 0.3,
+      基址: 参数.设置.模型.网关地址,
+      密钥: 参数.设置.模型.API密钥,
+      模型: 参数.设置.模型.分工.总编,
       消息: [
         {
           role: "system",
@@ -114,8 +122,6 @@ async function 合成开写包(
           content: "书名《" + 参数.书名 + "》，第 " + 参数.章节号 + " 章《" + 参数.章节标题 + "》。\n任务：" + 参数.任务 + "\n\n" + 材料,
         },
       ],
-      温度: 0.3,
-      最大词元: 6000,
       回调: (类型, 文本) => {
         if (类型 === "正文") 正文 += 文本
       },

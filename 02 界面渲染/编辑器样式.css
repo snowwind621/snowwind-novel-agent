@@ -1,0 +1,137 @@
+/* 只负责一件事：编辑器三态视图与 Markdown 预览的样式（正文编辑.tsx 专用）。 */
+
+.编辑器-工具行 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--线);
+  background: var(--底浅);
+}
+
+.编辑器-模式 { display: flex; gap: 4px; }
+
+.编辑器-模式按钮 {
+  padding: 3px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--字弱);
+  font-size: 12.5px;
+}
+.编辑器-模式按钮:hover { color: var(--字); border-color: var(--线); }
+.编辑器-模式按钮.选中 {
+  background: var(--主淡);
+  color: var(--主);
+  border-color: var(--主淡);
+  font-weight: 600;
+}
+
+.编辑器-分隔 { width: 1px; height: 18px; background: var(--线); margin: 0 2px; }
+.编辑器-提示 { color: var(--字弱); font-size: 12px; }
+
+.编辑器-工具栏 { display: flex; gap: 4px; flex-wrap: wrap; }
+
+.编辑器-工具按钮 {
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+/* 工具栏只放图标：方一点、留白小一点，八个排一行不跳 */
+.编辑器-工具按钮.纯图标 { padding: 4px 7px; gap: 0; }
+.编辑器-模式按钮 { display: inline-flex; align-items: center; gap: 5px; }
+
+.编辑器-分屏 {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.编辑器-分屏 > .编辑器-源码 { height: 100%; border-right: 1px solid var(--线); }
+
+/* 预览：中文排版跟正文区保持同一套行距与字号，读起来不跳。 */
+.编辑器-预览 {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 28px 40px 80px;
+  background: var(--底);
+  color: var(--字);
+  font-family: "Microsoft YaHei", "Noto Sans SC", serif;
+  font-size: 16.5px;
+  line-height: 2.05;
+  letter-spacing: 0.35px;
+}
+.编辑器-预览 > *:first-child { margin-top: 0; }
+.编辑器-预览 > *:last-child { margin-bottom: 0; }
+
+.编辑器-预览 p { margin: 0 0 0.35em; }
+.编辑器-预览 h1,
+.编辑器-预览 h2,
+.编辑器-预览 h3,
+.编辑器-预览 h4,
+.编辑器-预览 h5,
+.编辑器-预览 h6 { margin: 1.1em 0 0.5em; line-height: 1.55; font-weight: 700; }
+.编辑器-预览 h1 { font-size: 1.5em; }
+.编辑器-预览 h2 { font-size: 1.32em; }
+.编辑器-预览 h3 { font-size: 1.18em; }
+.编辑器-预览 h4,
+.编辑器-预览 h5,
+.编辑器-预览 h6 { font-size: 1.05em; color: var(--字弱); }
+
+.编辑器-预览 blockquote {
+  margin: 0.8em 0;
+  padding: 0.15em 0 0.15em 14px;
+  border-left: 3px solid var(--主);
+  color: var(--字弱);
+}
+.编辑器-预览 blockquote p { margin: 0.2em 0; }
+
+.编辑器-预览 ul,
+.编辑器-预览 ol { margin: 0.5em 0 0.8em; padding-left: 1.7em; }
+.编辑器-预览 li { margin: 0.15em 0; }
+.编辑器-预览 li > ul,
+.编辑器-预览 li > ol { margin: 0.15em 0 0.15em; }
+
+.编辑器-预览 code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--底更浅);
+  font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
+  font-size: 0.9em;
+}
+.编辑器-预览 pre.预览-代码块 {
+  margin: 0.8em 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  border: 1px solid var(--线);
+  border-radius: 8px;
+  background: var(--底更浅);
+}
+.编辑器-预览 pre.预览-代码块 code {
+  padding: 0;
+  background: transparent;
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+.编辑器-预览 table {
+  margin: 0.8em 0;
+  border-collapse: collapse;
+  font-size: 14px;
+  line-height: 1.9;
+}
+.编辑器-预览 th,
+.编辑器-预览 td { padding: 4px 12px; border: 1px solid var(--线); text-align: left; }
+.编辑器-预览 th { background: var(--底更浅); font-weight: 600; }
+
+.编辑器-预览 hr {
+  margin: 1.4em 0;
+  border: 0;
+  border-top: 1px solid var(--线);
+}
+.编辑器-预览 a { color: var(--主); text-decoration: underline; }
+.编辑器-预览 del { color: var(--字弱); }

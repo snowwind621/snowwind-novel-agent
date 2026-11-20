@@ -5,8 +5,12 @@ import { 桥 } from "./接口"
 import { 章节树 } from "./章节树"
 import { 台账面板 } from "./台账面板"
 import { 文件树 } from "./文件树"
+import { 图标 } from "./图标"
+import type { 图标名 } from "./图标"
 
 export type 左页 = "章节" | "文件" | "台账" | "建议"
+
+const 页图标: Record<左页, 图标名> = { 章节: "书本", 文件: "文件夹", 台账: "表格", 建议: "灯泡" }
 
 export function 左栏(属性: {
   项目: 项目摘要 | null
@@ -50,7 +54,8 @@ export function 左栏(属性: {
     <div className="左栏">
       <div className="分段">
         {(["章节", "文件", "台账", "建议"] as 左页[]).map((名) => (
-          <button key={名} className={"分段按钮" + (属性.页 === 名 ? " 选中" : "")} onClick={() => 属性.切页(名)}>
+          <button key={名} className={"分段按钮" + (属性.页 === 名 ? " 选中" : "")} onClick={() => 属性.切页(名)} title={"切到「" + 名 + "」"}>
+            <图标 名={页图标[名]} 大小={15} />
             {名}
             {名 === "台账" && 属性.看板?.统计.超期 ? " · " + 属性.看板.统计.超期 : ""}
             {名 === "文件" && 属性.当前文件 ? " ●" : ""}

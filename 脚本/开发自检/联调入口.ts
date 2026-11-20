@@ -13,9 +13,9 @@ const 数据目录 = path.join(process.env.APPDATA ?? "", "snowwind-novel-agent"
 
 async function 主() {
   const 设置 = 读设置(数据目录)
-  const 基址 = process.env.网关地址 || 设置.网关地址
-  const 密钥 = process.env.网关密钥 || 设置.API密钥
-  const 模型 = process.env.网关模型 || 设置.分工.助手
+  const 基址 = process.env.网关地址 || 设置.模型.网关地址
+  const 密钥 = process.env.网关密钥 || 设置.模型.API密钥
+  const 模型 = process.env.网关模型 || 设置.模型.分工.助手
   if (!密钥) throw new Error("没有密钥：请先打开软件在「设置」里填一次，或设置环境变量 网关密钥")
 
   const 项目 = await 扫描项目(书库)
