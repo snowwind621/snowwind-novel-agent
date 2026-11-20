@@ -53,15 +53,9 @@ export function 三栏布局() {
   const [左宽, set左宽] = useState(() => 读宽度("左栏宽", 300, 220, 460))
   const [右宽, set右宽] = useState(() => 读宽度("右栏宽", 420, 320, 640))
   const [拖侧, set拖侧] = useState<"左" | "右" | null>(null)
-  const [选区, set选区] = useState<{ 起点: number; 终点: number } | null>(null)
   const [台账同步中, set台账同步中] = useState(false)
   const 拖拽 = useRef<{ 侧: "左" | "右"; 起X: number; 起宽: number } | null>(null)
   const 派活占位 = useRef("")
-  const 续写请求号 = useRef("")
-  const [续写中, set续写中] = useState(false)
-  const 改写请求号 = useRef("")
-  const [改写中, set改写中] = useState(false)
-  const 待替换 = useRef<{ id: string; 起点: number; 终点: number; 原文: string } | null>(null)
   const [消息们, set消息们] = useState<对话条目[]>(() => {
     try {
       const 存过 = localStorage.getItem("对话")
@@ -79,43 +73,6 @@ export function 三栏布局() {
     }
   }, [消息们])
 
-  useEffect(() => {
-    const 卸载 = 桥.监听对话((事件) => {
-      if (!事件.请求号.startsWith("续-") || 事件.请求号 !== 续写请求号.current) return
-      if (事件.类型 === "思考") {
-        set状态字((旧) => (旧 === "正在续写…" ? "模型在构思，马上落笔…" : 旧))
-      } else if (事件.类型 === "正文") {
-        set正文((旧) => 旧 + 事件.文本)
-        set脏(true)
-        set状态字("正在续写…")
-      } else if (事件.类型 === "结束") {
-        set续写中(false)
-        set状态字("续写完成，记得保存")
-      } else if (事件.类型 === "错误") {
-        set续写中(false)
-        set状态字("续写失败：" + 事件.文本)
-      }
-    })
-    return 卸载
-  }, [])
-
-  useEffect(() => {
-    const 卸载 = 桥.监听对话((事件) => {
-      if (!事件.请求号.startsWith("改-") || 事件.请求号 !== 改写请求号.current) return
-      const 回条 = 事件.请求号 + "-回"
-      if (事件.类型 === "正文") 改条(回条, 事件.文本)
-      else if (事件.类型 === "结束") {
-        完成(回条)
-        set改写中(false)
-        set状态字("改写好了，看右边那一条")
-      } else if (事件.类型 === "错误") {
-        改条(回条, "\n[出错] " + 事件.文本)
-        完成(回条)
-        set改写中(false)
-      }
-    })
-    return 卸载
-  }, [])
 
   useEffect(() => {
     const 卸载 = 桥.监听派活((事件) => {
@@ -218,7 +175,6 @@ export function 三栏布局() {
   const 追加 = (条: 对话条目) => set消息们((旧) => [...旧, { 时间: Date.now(), ...条 }].slice(-200))
   const 改条 = (id: string, 补: string) =>
     set消息们((旧) => 旧.map((条) => (条.id === id ? { ...条, 文本: 条.文本 + 补 } : 条)))
-  const 完成 = (id: string) => set消息们((旧) => 旧.map((条) => (条.id === id ? { ...条, 进行中: false } : 条)))
   const 补条 = (id: string, 补丁: Partial<对话条目>) =>
     set消息们((旧) => 旧.map((条) => (条.id === id ? { ...条, ...补丁 } : 条)))
 
@@ -387,75 +343,8 @@ export function 三栏布局() {
     }
   }
 
-  const 续写 = async (指令 = "") => {
-    if (章节号 === null || 续写中) return
-    const 请求号 = "续-" + Date.now()
-    续写请求号.current = 请求号
-    set续写中(true)
-    set状态字("正在续写…")
-    try {
-      await 桥.续写({
-        请求号,
-        模型: 设定?.模型.分工.执笔 ?? "",
-        章节号,
-        标题,
-        已有正文: 正文,
-        指令: 指令.trim() || undefined,
-      })
-    } catch (错误: any) {
-      set续写中(false)
-      set状态字("续写失败：" + String(错误?.message ?? 错误))
-    }
-  }
-
-  const 发起改写 = async (参数: { 原文: string; 起点: number; 终点: number; 指令: string }) => {
-    if (章节号 === null || 改写中) return
-    const 请求号 = "改-" + Date.now()
-    const 回条 = 请求号 + "-回"
-    改写请求号.current = 请求号
-    待替换.current = { id: 回条, 起点: 参数.起点, 终点: 参数.终点, 原文: 参数.原文 }
-    set改写中(true)
-    set状态字("正在改写…")
-    追加({ id: 请求号 + "-我", 谁: "你", 文本: "（改写）" + (参数.指令 || "让它更紧、更具体") + "\n原文：" + 参数.原文.slice(0, 80) + "…" })
-    追加({ id: 回条, 谁: "改写", 文本: "", 进行中: true })
-    try {
-      await 桥.改写({
-        请求号,
-        模型: 设定?.模型.分工.执笔 ?? "",
-        章节号,
-        标题,
-        原文: 参数.原文,
-        前文: 正文.slice(Math.max(0, 参数.起点 - 600), 参数.起点),
-        后文: 正文.slice(参数.终点, 参数.终点 + 600),
-        指令: 参数.指令,
-      })
-    } catch (错误: any) {
-      set改写中(false)
-      set状态字("改写失败：" + String(错误?.message ?? 错误))
-    }
-  }
-
-  const 采纳改写 = (消息id: string) => {
-    const 目标 = 待替换.current
-    const 新文 = 消息们.find((条) => 条.id === 消息id)?.文本 ?? ""
-    if (!目标 || 目标.id !== 消息id || !新文.trim()) return
-    set正文((旧) => 旧.slice(0, 目标.起点) + 新文 + 旧.slice(目标.终点))
-    set脏(true)
-    set状态字("已替换为改写版，记得保存")
-  }
-
-  /** 停止：续写与改写两个流一起掐掉（对话流由右侧面板自己停）。 */
-  const 停止AI = async () => {
-    const 号们 = [续写请求号.current, 改写请求号.current].filter((号) => Boolean(号))
-    for (const 号 of 号们) await 桥.中止对话(号)
-    续写请求号.current = ""
-    改写请求号.current = ""
-    set续写中(false)
-    set改写中(false)
-    if (号们.length) set状态字("已停止")
-  }
-
   const 删除成员 = async (id: string) => {
+
     set成员们(await 桥.删除成员(id))
     set状态字("已移除一位智能体")
   }
@@ -624,7 +513,9 @@ export function 三栏布局() {
             set脏(true)
           }}
           保存={保存}
-          报选区={(起, 止) => set选区({ 起点: 起, 终点: 止 })}
+          报选区={() => {
+            /* 选区暂时没有消费者：改写已改成直接跟 agent 说，等 task-20 的工具再来取 */
+          }}
           状态字={状态字}
         />
         )}
@@ -645,22 +536,11 @@ export function 三栏布局() {
             正文={正文}
             设定={设定}
             看板={看板}
-            采纳改写={采纳改写}
-            取选区={() => {
-              if (!选区 || 选区.终点 <= 选区.起点) return null
-              const 原文 = 正文.slice(选区.起点, 选区.终点)
-              return 原文.trim() ? { 原文, 起点: 选区.起点, 终点: 选区.终点 } : null
-            }}
-            续写={(指令: string) => void 续写(指令)}
-            改写={发起改写}
-            同步台账={() => {
-              if (章节号 !== null) void 同步台账(章节号, true)
-            }}
+            成员们={成员们}
             派活={(任务: string) => void 派活(任务)}
-            停止AI={() => void 停止AI()}
             清空对话={清空对话}
             导出对话={导出对话}
-            忙={续写中 || 改写中 || 派活中 || 台账同步中}
+            忙={派活中}
           />
         </div>
       </div>

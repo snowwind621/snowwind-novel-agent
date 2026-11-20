@@ -1,26 +1,37 @@
-// 只负责一件事：右侧对话栏——气泡消息、功能菜单、流式收字、用量与本轮累计。
+// 只负责一件事：右侧对话栏——对话 / 讨论 / 计划三种模式，气泡、流式收字、用量与本轮累计。
 import React, { useEffect, useRef, useState } from "react"
 import { 桥, 时刻 } from "./接口"
-import type { 项目摘要, 看板数据, 设置, 对话事件, 对话条目, 用量 } from "./接口"
+import type { 看板数据, 设置, 项目摘要, 集群成员, 对话事件, 对话条目, 用量 } from "./接口"
 import { 组装系统提示 } from "../05 编排内核/章节提示词"
 import { 该压缩, 取要压的, 造摘要提示, 拼用户输入, 估算词元, 续摘要 } from "../06 智能体运行时/对话压缩"
 import type { 对话条 } from "../06 智能体运行时/对话压缩"
 import { 图标 } from "./图标"
 import type { 图标名 } from "./图标"
+import "./对话样式.css"
 
-type 功能 = "对话" | "续写" | "改写选中" | "同步台账" | "派活"
+type 模式 = "对话" | "讨论" | "计划"
 
-const 功能们: 功能[] = ["对话", "续写", "改写选中", "同步台账", "派活"]
+const 模式们: 模式[] = ["对话", "讨论", "计划"]
+const 模式图标: Record<模式, 图标名> = { 对话: "笔", 讨论: "用户群", 计划: "灯泡" }
+const 模式键 = "对话模式"
 
-/** 说话人 → 图标：你/集群是人，总编/改写是笔，系统提示是警告。 */
+const 占位: Record<模式, string> = {
+  对话: "直接说你要什么。Enter 发送，Shift+Enter 换行。",
+  讨论: "把议题抛给集群：他们一个个接着说，最后由总编收口。",
+  计划: "",
+}
+
+/** 说话人 → 图标：你/集群/成员是人，总编是笔，系统提示是警告。 */
 const 说话人图标: Record<对话条目["谁"], 图标名> = { 你: "用户群", 总编: "笔", 改写: "笔", 集群: "用户群", 系统: "警告" }
 
-const 占位: Record<功能, string> = {
-  对话: "问问总编，或让它拆任务。Enter 发送，Shift+Enter 换行。",
-  续写: "接着往下写多少字、往哪儿走（留空就按默认 600 字）",
-  改写选中: "要原文怎么改，例如：更冷一点、删掉解释",
-  同步台账: "台账会自己抽取，这里可以补一句说明（可留空）",
-  派活: "给集群派一件活，例如：三叶这条线下一章该做什么",
+function 读模式(): 模式 {
+  try {
+    const 存 = localStorage.getItem(模式键)
+    if (存 === "讨论" || 存 === "计划") return 存
+  } catch {
+    /* 读不到就当默认的「对话」 */
+  }
+  return "对话"
 }
 
 function 千分(数: number): string {
@@ -38,7 +49,6 @@ function 用量摘要(用?: 用量): string {
   return "↑" + 千分(用.输入) + " ↓" + 千分(用.输出) + " · 缓存 " + 缓存率(用.缓存命中, 用.缓存未命中)
 }
 
-/** 本轮累计：只把网关真给了用量的那几条加起来。 */
 function 累计摘要(消息们: 对话条目[]): string {
   const 有 = 消息们.map((条) => 条.用量).filter((用): 用 is 用量 => Boolean(用))
   if (有.length === 0) return "本轮 ↑— ↓— · 缓存 —"
@@ -61,38 +71,35 @@ export function AI面板(属性: {
   正文: string
   设定: 设置 | null
   看板: 看板数据 | null
-  采纳改写: (消息id: string) => void
-  取选区: () => { 原文: string; 起点: number; 终点: number } | null
-  续写: (指令: string) => void
-  改写: (参数: { 原文: string; 起点: number; 终点: number; 指令: string }) => void
-  同步台账: () => void
+  成员们: 集群成员[]
   派活: (任务: string) => void
-  停止AI: () => void
   清空对话: () => void
   导出对话: () => Promise<string>
   忙: boolean
 }) {
-  const { 消息们, 追加, 改条, 补条, 项目, 章节号, 标题, 正文, 设定, 看板, 采纳改写, 取选区 } = 属性
-  const [功能选中, set功能选中] = useState<功能>("对话")
-  const [菜单开, set菜单开] = useState(false)
-  const [菜单方向, set菜单方向] = useState<{ 向上: boolean; 靠左: boolean; 最大高: number }>({ 向上: false, 靠左: false, 最大高: 240 })
+  const { 消息们, 追加, 改条, 补条, 项目, 章节号, 标题, 正文, 设定, 看板 } = 属性
+  const [模式, set模式值] = useState<模式>(读模式)
   const [模型, set模型] = useState("")
   const [自定义模型, set自定义模型] = useState("")
   const [输入, set输入] = useState("")
   const [对话中, set对话中] = useState(false)
+  const [讨论中, set讨论中] = useState(false)
   const [错误, set错误] = useState("")
   const [提示, set提示] = useState("")
   const [摘要, set摘要] = useState("")
   const [已压条数, set已压条数] = useState(0)
+  const [开写包, set开写包] = useState<string | null>(null)
+  const [计划状态, set计划状态] = useState("")
   const 当前请求 = useRef("")
   const 底 = useRef<HTMLDivElement | null>(null)
-  const 菜单锚 = useRef<HTMLDivElement | null>(null)
+  /** 讨论里每个成员一个请求号，说完就 resolve；说过的内容也存在这里，供总编收口。 */
+  const 讨论等待 = useRef(new Map<string, () => void>())
+  const 讨论文本 = useRef(new Map<string, string>())
 
   const 分工 = 设定?.模型.分工
   const 模型们 = Array.from(new Set([分工?.总编, 分工?.执笔, 分工?.审校, 分工?.助手].filter(Boolean) as string[]))
   const 实际模型 = 模型 === "__自定义" ? 自定义模型.trim() : 模型 || (分工?.助手 ?? "")
-  const 忙 = 属性.忙 || 对话中
-  const 需要输入 = 功能选中 === "对话" || 功能选中 === "派活"
+  const 忙 = 属性.忙 || 对话中 || 讨论中
 
   useEffect(() => {
     set模型((旧) => 旧 || (分工?.助手 ?? ""))
@@ -102,7 +109,7 @@ export function AI面板(属性: {
     底.current?.scrollTo({ top: 底.current.scrollHeight, behavior: "smooth" })
   }, [消息们])
 
-  // 清空对话时把压缩记忆一起清掉，免得新对话无缘无故背着旧摘要。
+  // 清空对话时把压缩记忆一起清掉，免得新对话背着旧摘要。
   useEffect(() => {
     if (消息们.length === 0) {
       set摘要("")
@@ -110,8 +117,58 @@ export function AI面板(属性: {
     }
   }, [消息们.length])
 
+  // 计划模式：进模式或换章时读一次开写包（只读，不改文件）。
+  useEffect(() => {
+    if (模式 !== "计划" || 章节号 === null) return
+    let 还有效 = true
+    const 相对 = "情节/开写包/第" + String(章节号).padStart(3, "0") + "章 开写包.md"
+    set计划状态("正在读开写包…")
+    void (async () => {
+      try {
+        const 内容 = await 桥.书库读文件(相对)
+        if (!还有效) return
+        set开写包(内容.是文本 ? 内容.文本 : null)
+        set计划状态("")
+      } catch {
+        if (!还有效) return
+        set开写包(null)
+        set计划状态("这一章还没有开写包；派一次活就会生成。")
+      }
+    })()
+    return () => {
+      还有效 = false
+    }
+  }, [模式, 章节号])
+
   useEffect(() => {
     const 卸载 = 桥.监听对话((事件: 对话事件) => {
+      // 讨论：每个成员一个请求号，各自落到自己的气泡里
+      const 等 = 讨论等待.current.get(事件.请求号)
+      if (等) {
+        const 回条 = 事件.请求号 + "-回"
+        if (事件.类型 === "正文") {
+          改条(回条, 事件.文本)
+          讨论文本.current.set(事件.请求号, (讨论文本.current.get(事件.请求号) ?? "") + 事件.文本)
+        } else if (事件.类型 === "用量") {
+          try {
+            补条(回条, { 用量: JSON.parse(事件.文本) as 用量 })
+          } catch {
+            /* 用量块不规范就当没有 */
+          }
+        } else if (事件.类型 === "结束") {
+          补条(回条, { 进行中: false })
+          讨论等待.current.delete(事件.请求号)
+          等()
+        } else if (事件.类型 === "错误") {
+          改条(回条, "\n[出错] " + 事件.文本)
+          补条(回条, { 进行中: false, 出错: true })
+          讨论等待.current.delete(事件.请求号)
+          等()
+        }
+        return
+      }
+
+      // 普通对话
       if (事件.请求号 !== 当前请求.current) return
       const 回条 = 事件.请求号 + "-回"
       if (事件.类型 === "正文") 改条(回条, 事件.文本)
@@ -134,41 +191,14 @@ export function AI面板(属性: {
     return 卸载
   }, [])
 
-  // 菜单开着时，窗口一动就收起来：比跟着重算更稳，也不会飘到屏幕外。
-  useEffect(() => {
-    if (!菜单开) return
-    const 关 = () => set菜单开(false)
-    const 点外面 = (事件: PointerEvent) => {
-      if (菜单锚.current && !菜单锚.current.contains(事件.target as Node)) set菜单开(false)
+  const 切模式 = (新: 模式) => {
+    set模式值(新)
+    set错误("")
+    try {
+      localStorage.setItem(模式键, 新)
+    } catch {
+      /* 存不下不影响本回合 */
     }
-    window.addEventListener("resize", 关)
-    window.addEventListener("scroll", 关, true)
-    document.addEventListener("pointerdown", 点外面, true)
-    return () => {
-      window.removeEventListener("resize", 关)
-      window.removeEventListener("scroll", 关, true)
-      document.removeEventListener("pointerdown", 点外面, true)
-    }
-  }, [菜单开])
-
-  /** 贴着按钮右对齐；下方放不下就向上弹；靠屏幕左边就改左对齐；高度按剩余空间卡住并内部滚动。 */
-  const 算菜单位置 = () => {
-    const 框 = 菜单锚.current?.getBoundingClientRect()
-    if (!框) return
-    const 下方 = window.innerHeight - 框.bottom - 8
-    const 上方 = 框.top - 8
-    const 想开 = 功能们.length * 34 + 14
-    const 向上 = 下方 < Math.min(想开, 200) && 上方 > 下方
-    set菜单方向({
-      向上,
-      靠左: 框.left < 190,
-      最大高: Math.max(120, Math.min(向上 ? 上方 : 下方, 320)),
-    })
-  }
-
-  const 开菜单 = () => {
-    if (!菜单开) 算菜单位置()
-    set菜单开((旧) => !旧)
   }
 
   /** 用助手模型把较早的对话压成摘要；失败就当没压，不拦着用户发问。 */
@@ -193,13 +223,13 @@ export function AI面板(属性: {
         })
     })
 
+  /** 一对一对话：带摘要压缩的完整上下文。 */
   const 发对话 = async (文本: string) => {
     const 干净 = 文本.trim()
     if (!干净 || 对话中) return
     const 请求号 = String(Date.now()) + Math.random().toString(16).slice(2)
     当前请求.current = 请求号
 
-    // 先把「已经说过的话」整理成 摘要 + 最近若干条原文，再把这次的问题接上去。
     const 历史: 对话条[] = 消息们
       .filter((条) => 条.文本.trim() && !条.进行中 && !条.出错 && 条.谁 !== "系统")
       .map((条) => ({ 谁: 条.谁, 文本: 条.文本 }))
@@ -240,36 +270,107 @@ export function AI面板(属性: {
     await 桥.发送对话({ 请求号, 模型: 实际模型, 系统提示, 用户输入: 拼用户输入(摘要文, 历史.slice(已压), 干净) })
   }
 
+  /** 讨论阵容：除总编外按固定角色顺序取几位，总编留给收口。 */
+  const 讨论阵容 = (): 集群成员[] => {
+    const 序 = ["审校", "伏笔", "台账", "地点", "物品"]
+    const 们 = 序.map((角) => 属性.成员们.find((人) => 人.角色 === 角)).filter(Boolean) as 集群成员[]
+    const 上限 = Math.max(1, Math.min(4, 设定?.智能体.阵容上限 ?? 4) - 1)
+    return 们.slice(0, 上限)
+  }
+
+  const 模型给 = (角色: string): string => {
+    if (!分工) return 实际模型
+    if (角色 === "总编") return 分工.总编
+    if (角色 === "审校") return 分工.审校
+    return 分工.助手
+  }
+
+  /** 一位成员发言：独立请求号、独立气泡，流式收字，说完就 resolve。 */
+  const 跑一员 = (成员: 集群成员, 议题: string, 前话: string): Promise<string> =>
+    new Promise((解决) => {
+      const 请求号 = "讨-" + Date.now() + "#" + 成员.名称 + Math.random().toString(16).slice(2, 5)
+      讨论等待.current.set(请求号, () => 解决(讨论文本.current.get(请求号) ?? ""))
+      讨论文本.current.set(请求号, "")
+      追加({ id: 请求号 + "-回", 谁: "集群", 文本: "", 进行中: true })
+      const 系统提示 = [
+        成员.人格,
+        "",
+        "【讨论规则】",
+        "1. 只就议题说 2–3 句，给出你的判断与依据。",
+        "2. 不写正文、不复述别人的话、不做总结。",
+        "3. 拿不准就明说「未定」，不要编。",
+      ].join("\n")
+      const 用户输入 = 前话
+        ? "【议题】" + 议题 + "\n\n【前面几位说过的，只作参考，不要复述】\n" + 前话
+        : "【议题】" + 议题
+      void 桥.发送对话({ 请求号, 模型: 模型给(成员.角色), 系统提示, 用户输入 }).catch(() => {
+        讨论等待.current.delete(请求号)
+        补条(请求号 + "-回", { 文本: "（这一位没接上话）", 进行中: false, 出错: true })
+        解决("")
+      })
+    })
+
+  /** 总编收口：把刚才的讨论收成几条可执行结论。 */
+  const 收口 = (议题: string, 讨论文: string, 请求号: string): Promise<void> =>
+    new Promise((解决) => {
+      讨论等待.current.set(请求号, 解决)
+      讨论文本.current.set(请求号, "")
+      追加({ id: 请求号 + "-回", 谁: "总编", 文本: "", 进行中: true })
+      const 人格 = (设定?.智能体.人格.总编 ?? "").split("{书名}").join(项目?.书名 ?? "这本书")
+      const 系统提示 = [
+        人格,
+        "",
+        "【收口】",
+        "把上面的讨论收成 3 条可执行结论，每条一行；有分歧就写明分歧。",
+        "不要复述过程，不写正文。",
+      ].join("\n")
+      void 桥
+        .发送对话({ 请求号, 模型: 模型给("总编"), 系统提示, 用户输入: "【议题】" + 议题 + "\n\n【讨论记录】\n" + 讨论文 })
+        .catch(() => {
+          讨论等待.current.delete(请求号)
+          补条(请求号 + "-回", { 文本: "（总编没接上话）", 进行中: false, 出错: true })
+          解决()
+        })
+    })
+
+  /** 讨论：议题发下去，成员一个一个接着说（逐个流式出现），最后总编收口。 */
+  const 开讨论 = async (议题: string) => {
+    const 干净 = 议题.trim()
+    if (!干净 || 讨论中) return
+    const 阵容 = 讨论阵容()
+    if (阵容.length === 0) {
+      set错误("还没有可发言的成员，先在设置里建一个")
+      return
+    }
+    set讨论中(true)
+    set错误("")
+    set输入("")
+    追加({ id: "议题-" + Date.now(), 谁: "你", 文本: "（讨论）" + 干净 })
+    let 前话 = ""
+    for (const 成员 of 阵容) {
+      const 刚说 = await 跑一员(成员, 干净, 前话)
+      前话 += "【" + 成员.名称 + "】" + 刚说.trim() + "\n"
+    }
+    const 收口号 = "收-" + Date.now() + Math.random().toString(16).slice(2, 5)
+    await 收口(干净, 前话, 收口号)
+    set讨论中(false)
+  }
+
   const 发送 = () => {
     if (忙) return
     const 文本 = 输入.trim()
-    if (功能选中 === "对话") void 发对话(文本)
-    else if (功能选中 === "续写") {
-      属性.续写(文本)
-      set输入("")
-    } else if (功能选中 === "改写选中") {
-      const 选区 = 取选区()
-      if (!选区) {
-        set错误("先在正文里选中一段，再点发送。")
-        return
-      }
-      set错误("")
-      属性.改写({ ...选区, 指令: 文本 })
-      set输入("")
-    } else if (功能选中 === "同步台账") {
-      属性.同步台账()
-      set输入("")
-    } else {
-      if (!文本) return
-      属性.派活(文本)
-      set输入("")
-    }
+    if (模式 === "对话") void 发对话(文本)
+    else if (模式 === "讨论") void 开讨论(文本)
   }
 
   const 停止 = async () => {
+    for (const 号 of [...讨论等待.current.keys()]) {
+      await 桥.中止对话(号)
+      讨论等待.current.delete(号)
+    }
     if (当前请求.current && 对话中) await 桥.中止对话(当前请求.current)
-    属性.停止AI()
     set对话中(false)
+    set讨论中(false)
   }
 
   /** 一条回答对应的原始输入：往前找最近的一条「你」。 */
@@ -303,38 +404,37 @@ export function AI面板(属性: {
     set提示("正在导出…")
     try {
       set提示(await 属性.导出对话())
-    } catch (错误: any) {
-      set提示("导出失败：" + String(错误?.message ?? 错误))
+    } catch (错: any) {
+      set提示("导出失败：" + String(错?.message ?? 错))
     }
   }
 
+  /** 讨论气泡上的说话人：请求号里写着「#成员名」。 */
+  const 气泡名 = (条: 对话条目): string => {
+    const 匹配 = /#([^-]+?)[0-9a-f]{0,4}-回$/.exec(条.id)
+    return 匹配 ? 匹配[1] : 条.谁
+  }
+
+  const 待裁定条目 = (看板?.待裁定 ?? []).find((项) => 项.章号 === (章节号 ?? 0))?.条目 ?? []
+  const 该兑 = (看板?.伏笔 ?? []).filter(
+    (项) => 项.状态 !== "已兑现" && (项.超期 || 项.久置 || 项.预定章.includes(章节号 ?? 0)),
+  )
+
   return (
     <div className="对话区">
-      <div className="对话头">
-        <span className="图标-芯片" title="模型">
-          <图标 名="芯片" 大小={15} />
-        </span>
-        <select className="工具下拉" value={模型 || "__自定义"} onChange={(事件) => set模型(事件.target.value)} title="这次对话用哪个模型">
-          {模型们.map((名) => (
-            <option key={名} value={名}>
-              {名}
-            </option>
-          ))}
-          <option value="__自定义">自定义…</option>
-        </select>
-        {模型 === "__自定义" ? (
-          <input
-            className="工具输入"
-            placeholder="模型名"
-            value={自定义模型}
-            onChange={(事件) => set自定义模型(事件.target.value)}
-          />
-        ) : null}
-        <span className="胶囊">{章节号 ? "ch" + 章节号 : "无章节"}</span>
-        <span className="用量累计" title="本轮所有回答的用量合计">
-          {累计摘要(消息们)}
-        </span>
-        <div className="对话头右">
+      <div className="分段 对话分段">
+        {模式们.map((名) => (
+          <button
+            key={名}
+            className={"分段按钮" + (模式 === 名 ? " 选中" : "")}
+            onClick={() => 切模式(名)}
+            title={"切到「" + 名 + "」"}
+          >
+            <图标 名={模式图标[名]} 大小={15} />
+            {名}
+          </button>
+        ))}
+        <div className="对话分段右">
           <button className="小按钮 图标按钮" onClick={属性.清空对话} title="清空对话">
             <图标 名="清空" 大小={15} />
           </button>
@@ -343,136 +443,198 @@ export function AI面板(属性: {
           </button>
         </div>
       </div>
+
+      {模式 !== "计划" ? (
+        <div className="对话副行">
+          <span className="图标-芯片" title="模型">
+            <图标 名="芯片" 大小={14} />
+          </span>
+          <select className="工具下拉" value={模型 || "__自定义"} onChange={(事件) => set模型(事件.target.value)} title="这次对话用哪个模型">
+            {模型们.map((名) => (
+              <option key={名} value={名}>
+                {名}
+              </option>
+            ))}
+            <option value="__自定义">自定义…</option>
+          </select>
+          {模型 === "__自定义" ? (
+            <input
+              className="工具输入"
+              placeholder="模型名"
+              value={自定义模型}
+              onChange={(事件) => set自定义模型(事件.target.value)}
+            />
+          ) : null}
+          <span className="胶囊">{章节号 ? "ch" + 章节号 : "无章节"}</span>
+          <span className="用量累计" title="本轮所有回答的用量合计">
+            {累计摘要(消息们)}
+          </span>
+        </div>
+      ) : null}
+
       {提示 ? <div className="对话提示 微信息">{提示}</div> : null}
 
-      <div className="流" ref={底}>
-        {已压条数 > 0 ? (
-          <div className="对话提示 微信息" title="较早的消息已用助手模型压成摘要，随每次提问一起带上">
-            较早 {已压条数} 条已压缩
-          </div>
-        ) : null}
-        {消息们.length === 0 ? (
-          <div className="空态" style={{ padding: 24 }}>
-            在设置里打开「智能体集群」派一件活；
-            <br />
-            或者直接在下面问、续写、改写。
-          </div>
-        ) : null}
-        {消息们.map((条) => (
-          <div key={条.id} className={"消息 谁-" + 条.谁}>
-            <div className="气泡">
-              <div className="气泡头">
-                <图标 名={说话人图标[条.谁]} 大小={14} />
-                <span className="气泡名">{条.谁}</span>
-                {条.时间 ? <span className="微信息">{时刻(条.时间)}</span> : null}
-                {条.进行中 ? <span className="微信息">正在生成…</span> : null}
-                {条.被替代 ? <span className="微信息">（已被新版替代）</span> : null}
-                <span className="消息操作">
-                  <button className="小按钮 图标按钮" onClick={() => void 复制(条)} title="复制这条消息">
-                    <图标 名="复制" 大小={14} />
-                  </button>
-                  {条.出错 ? (
-                    <button className="小按钮 图标按钮" onClick={() => void 重跑(条)} title="重试这一条">
-                      <图标 名="刷新" 大小={14} />
-                    </button>
-                  ) : null}
-                  {!条.出错 && !条.进行中 && !条.被替代 && (条.谁 === "总编" || 条.谁 === "改写") && 原问(条) ? (
-                    <button className="小按钮 图标按钮" onClick={() => void 重跑(条)} title="重新生成（旧回答标注为已替代）">
-                      <图标 名="刷新" 大小={14} />
-                    </button>
-                  ) : null}
-                </span>
-              </div>
-              <div className="消息体">{条.文本}</div>
-              {条.谁 === "改写" && !条.进行中 && 条.文本.trim() ? (
-                <div className="气泡动作">
-                  <button className="小按钮" onClick={() => 采纳改写(条.id)} title="把改写结果替换回正文">
-                    <图标 名="勾" 大小={14} />
-                    替换原文
-                  </button>
-                </div>
-              ) : null}
-              {条.明细 ? (
-                <details className="明细">
-                  <summary>各位负责人的原始回答 · {条.明细.length}</summary>
-                  {条.明细.map((项, 序) => (
-                    <div className="明细项" key={序}>
-                      <b>
-                        {项.成员}（{项.角色}）
-                      </b>
-                      <div>{项.产出}</div>
-                    </div>
-                  ))}
-                </details>
-              ) : null}
-              {(条.谁 === "总编" || 条.谁 === "改写") && !条.进行中 ? (
-                <div className="用量行">{用量摘要(条.用量)}</div>
-              ) : null}
+      {模式 === "计划" ? (
+        <>
+          <div className="计划区">
+            <div className="分组条">
+              <span>开写包 · 第 {章节号 ?? "—"} 章</span>
+              <span>只读</span>
             </div>
-          </div>
-        ))}
-      </div>
+            {开写包 ? (
+              <div className="计划卡">
+                <div className="计划正文">{开写包}</div>
+              </div>
+            ) : (
+              <div className="计划空">{计划状态 || "这一章还没有开写包"}</div>
+            )}
 
-      <div className="输入区">
-        <textarea
-          className="输入框"
-          placeholder={占位[功能选中]}
-          value={输入}
-          onChange={(事件) => set输入(事件.target.value)}
-          onKeyDown={(事件) => {
-            if (事件.key === "Enter" && !事件.shiftKey && !事件.ctrlKey && !事件.metaKey) {
-              事件.preventDefault()
-              发送()
-            }
-          }}
-        />
-        <div className="操作行">
-          <div className="功能锚" ref={菜单锚}>
-            <button className="功能按钮" onClick={开菜单} title="切换这次要做什么">
-              <图标 名="列表" 大小={15} />
-              功能 ▾ {功能选中}
+            <div className="分组条">
+              <span>待裁定建议</span>
+              <span>{待裁定条目.length} 条</span>
+            </div>
+            {待裁定条目.length === 0 ? <div className="计划空">这一章没有待裁定建议</div> : null}
+            {待裁定条目.map((条, 序) => (
+              <div className="伏笔项" key={序}>
+                <div className="伏笔头">
+                  <span className="伏笔号">{序 + 1}</span>
+                  <span className="伏笔名">{条.内容}</span>
+                </div>
+                <div className="伏笔尾">
+                  {条.提者}（{条.角色}）· 依据：{条.依据 || "未写明"}
+                </div>
+              </div>
+            ))}
+
+            <div className="分组条">
+              <span>本章该兑伏笔</span>
+              <span>{该兑.length} 条</span>
+            </div>
+            {该兑.length === 0 ? <div className="计划空">没有到期的伏笔</div> : null}
+            {该兑.map((项) => (
+              <div className={"伏笔项" + (项.超期 ? " 超期" : "")} key={项.编号}>
+                <div className="伏笔头">
+                  <span className="伏笔号">{项.编号}</span>
+                  <span className="伏笔名">{项.名称}</span>
+                  <span className={"徽 " + (项.超期 ? "超期" : "")}>{项.超期 ? "超期" : 项.久置 ? "久置" : 项.状态}</span>
+                </div>
+                <div className="伏笔尾">
+                  埋于 {项.埋章 === null ? "—" : "ch" + 项.埋章}　搁置 {项.搁置章数} 章
+                  {项.参考间隔 !== null ? "　参考间隔 " + 项.参考间隔 + " 章" : ""}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="计划底">
+            <button
+              onClick={() => {
+                if (章节号 === null) return
+                属性.派活("重新生成第 " + 章节号 + " 章的开写包：给出本章目标、必须兑现的伏笔、不能写的东西、谁在场。")
+              }}
+              disabled={属性.忙 || 章节号 === null}
+              title="派一次活，重新生成这一章的开写包"
+            >
+              <图标 名="播放" 大小={14} />
+              重新生成
             </button>
-            {菜单开 ? (
-              <div
-                className="菜单 功能菜单"
-                style={{
-                  top: 菜单方向.向上 ? "auto" : "calc(100% + 4px)",
-                  bottom: 菜单方向.向上 ? "calc(100% + 4px)" : "auto",
-                  right: 菜单方向.靠左 ? "auto" : 0,
-                  left: 菜单方向.靠左 ? 0 : "auto",
-                  maxHeight: 菜单方向.最大高,
-                  overflowY: "auto",
-                }}
-              >
-                {功能们.map((名) => (
-                  <div
-                    key={名}
-                    className={"菜单项" + (名 === 功能选中 ? " 选中" : "")}
-                    onClick={() => {
-                      set功能选中(名)
-                      set菜单开(false)
-                      set错误("")
-                    }}
-                  >
-                    {名}
-                  </div>
-                ))}
+            <span className="微信息">会调一次集群；结果落在「情节/开写包」和右侧对话里。</span>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="流" ref={底}>
+            {已压条数 > 0 ? (
+              <div className="对话提示 微信息" title="较早的消息已用助手模型压成摘要，随每次提问一起带上">
+                较早 {已压条数} 条已压缩
               </div>
             ) : null}
+            {消息们.length === 0 ? (
+              <div className="空态" style={{ padding: 24 }}>
+                直接说要什么；想听争论就切到「讨论」。
+              </div>
+            ) : null}
+            {消息们.map((条) => (
+              <div key={条.id} className={"消息 谁-" + 条.谁}>
+                <div className="气泡">
+                  <div className="气泡头">
+                    <图标 名={说话人图标[条.谁]} 大小={14} />
+                    <span className="气泡名">{气泡名(条)}</span>
+                    {条.时间 ? <span className="微信息">{时刻(条.时间)}</span> : null}
+                    {条.进行中 ? <span className="微信息">正在说话…</span> : null}
+                    {条.被替代 ? <span className="微信息">（已被新版替代）</span> : null}
+                    <span className="消息操作">
+                      <button className="小按钮 图标按钮" onClick={() => void 复制(条)} title="复制这条消息">
+                        <图标 名="复制" 大小={14} />
+                      </button>
+                      {条.出错 ? (
+                        <button className="小按钮 图标按钮" onClick={() => void 重跑(条)} title="重试这一条">
+                          <图标 名="刷新" 大小={14} />
+                        </button>
+                      ) : null}
+                      {!条.出错 && !条.进行中 && !条.被替代 && 条.谁 === "总编" && 原问(条) ? (
+                        <button className="小按钮 图标按钮" onClick={() => void 重跑(条)} title="重新生成（旧回答标注为已替代）">
+                          <图标 名="刷新" 大小={14} />
+                        </button>
+                      ) : null}
+                    </span>
+                  </div>
+                  <div className="消息体">{条.文本}</div>
+                  {条.明细 ? (
+                    <details className="明细">
+                      <summary>各位负责人的原始回答 · {条.明细.length}</summary>
+                      {条.明细.map((项, 序) => (
+                        <div className="明细项" key={序}>
+                          <b>
+                            {项.成员}（{项.角色}）
+                          </b>
+                          <div>{项.产出}</div>
+                        </div>
+                      ))}
+                    </details>
+                  ) : null}
+                  {(条.谁 === "总编" || Boolean(条.用量)) && !条.进行中 ? (
+                    <div className="用量行">{用量摘要(条.用量)}</div>
+                  ) : null}
+                </div>
+              </div>
+            ))}
           </div>
-          <span className="微信息">{忙 ? "正在跑…" : "Enter 发送 · Shift+Enter 换行"}</span>
-          <div className="操作右">
-            <button onClick={发送} disabled={忙 || (需要输入 && !输入.trim())} title="发送（Enter）">
-              <图标 名="发送" 大小={15} />
-              发送
-            </button>
-            <button onClick={() => void 停止()} disabled={!忙} title="停止生成">
-              <图标 名="停止" 大小={14} />
-              停止
-            </button>
+
+          <div className="输入区">
+            <textarea
+              className="输入框"
+              placeholder={占位[模式]}
+              value={输入}
+              onChange={(事件) => set输入(事件.target.value)}
+              onKeyDown={(事件) => {
+                if (事件.key === "Enter" && !事件.shiftKey && !事件.ctrlKey && !事件.metaKey) {
+                  事件.preventDefault()
+                  发送()
+                }
+              }}
+            />
+            <div className="操作行">
+              <span className="微信息">
+                {模式 === "讨论"
+                  ? 讨论中
+                    ? "讨论进行中：成员一个个接着说…"
+                    : "议题会依次交给 " + 讨论阵容().map((人) => 人.名称).join("、") + "，最后由总编收口"
+                  : "Enter 发送 · Shift+Enter 换行"}
+              </span>
+              <div className="操作右">
+                <button onClick={发送} disabled={忙 || !输入.trim()} title="发送（Enter）">
+                  <图标 名="发送" 大小={15} />
+                  发送
+                </button>
+                <button onClick={() => void 停止()} disabled={!忙} title="停止生成">
+                  <图标 名="停止" 大小={14} />
+                  停止
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+        </>
+      )}
       {错误 ? <div className="微信息" style={{ color: "var(--危)", padding: "0 12px 10px" }}>出错：{错误}</div> : null}
     </div>
   )

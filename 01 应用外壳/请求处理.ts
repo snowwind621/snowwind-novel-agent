@@ -11,7 +11,7 @@ import { 记事件 } from "../13 共享黑板/事件日志"
 import { 拉模型清单, 流式对话, 取调用策略 } from "../04 模型接入/网关客户端"
 import { 组装系统提示 } from "../05 编排内核/章节提示词"
 import { 同步章节台账 } from "../09 台账同步/同步台账"
-import { 路径, 派活归档 } from "../10 书库检索/书库布局"
+import { 路径, 派活归档, 计划 } from "../10 书库检索/书库布局"
 import { 导入旧书库 } from "../16 书库迁移/导入旧书库"
 import { 抽建议, 写建议文件, 读全部建议 } from "../17 建议审阅/待裁定建议"
 import { 生成集群, 读集群, 存集群 } from "../06 智能体运行时/成员目录"
@@ -457,9 +457,9 @@ export function 创建请求处理(
     }
   }
 
-  /** 开写包落盘：每章一份，覆盖更新，属于「情节」，可以当依据用。 */
+  /** 开写包落盘：每章一份，覆盖更新；AI 产出统一进「计划/」，与 canon 分开。 */
   async function 落开写包(章号: number, 标题: string, 任务: string, 结果: any): Promise<string> {
-    const 相对 = "情节/开写包/第" + String(章号).padStart(3, "0") + "章 开写包.md"
+    const 相对 = 计划.开写包 + "/第" + String(章号).padStart(3, "0") + "章 开写包.md"
     const 文件 = path.join(状态.项目!.路径, 相对)
     fs.mkdirSync(path.dirname(文件), { recursive: true })
     const 正文 = [

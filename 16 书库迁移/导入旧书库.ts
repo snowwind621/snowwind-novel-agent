@@ -2,7 +2,7 @@
 import fs from "node:fs/promises"
 import fsSync from "node:fs"
 import path from "node:path"
-import { 路径, 台账册, 卷目录名, 章文件名, 解析章文件名, 造清单 } from "../10 书库检索/书库布局"
+import { 路径, 台账册, 计划, 卷目录名, 章文件名, 解析章文件名, 造清单 } from "../10 书库检索/书库布局"
 import { 找表们, 列号, 取行, 写行 } from "../09 台账同步/表格改写"
 
 export interface 导入统计 {
@@ -229,6 +229,11 @@ export async function 导入旧书库(旧根: string, 新根: string): Promise<�
     统计.台账++
   }
   const 并入 = await 并入旧镜像列(旧根, path.join(新根, 台账册.承诺台账), 旧镜像列们)
+
+  // AI 产出目录先建好：新书库一出生就是「计划/」结构，别等第一次派活才出现。
+  for (const 相对 of [计划.开写包, 计划.待裁定, 计划.历史]) {
+    await fs.mkdir(path.join(新根, 相对), { recursive: true })
+  }
 
   // 附录目录：情节 / 核对 / 留痕 / 考据 / 导航 / 讨论
   const 附录映射: Array<[string, string]> = [

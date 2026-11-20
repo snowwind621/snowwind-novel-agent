@@ -1,0 +1,64 @@
+/* 只负责一件事：对话栏三种模式、讨论列表与计划卡的样式（其余样式仍归 样式.css）。 */
+
+/* 顶部三个模式页签：跟左栏 .分段 / .分段按钮 完全同一套视觉 */
+.对话分段 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 42px;
+  flex: 0 0 42px;
+  padding: 0 8px 0 12px;
+  border-bottom: 1px solid var(--线);
+}
+.对话分段 .分段按钮 {
+  flex: 0 0 auto;
+  height: 28px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.对话分段右 { margin-left: auto; display: flex; gap: 2px; }
+
+/* 模式页签下面那条窄行：模型 / 上下文 / 本轮用量 */
+.对话副行 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--线淡);
+  overflow: hidden;
+}
+
+/* 计划模式：只读物料，卡片沿用「卡片 + 细分割线」那套 */
+.计划区 {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 6px 12px 12px;
+}
+.计划卡 {
+  padding: 10px 12px;
+  border: 1px solid var(--线淡);
+  border-radius: var(--卡圆角, 10px);
+  background: var(--底更浅);
+  margin-bottom: 8px;
+}
+.计划正文 {
+  white-space: pre-wrap;
+  font-size: 12.5px;
+  line-height: 1.85;
+  color: var(--字);
+  overflow-wrap: anywhere;
+}
+.计划空 { color: var(--字弱); font-size: 12.5px; line-height: 1.8; padding: 8px 2px 12px; }
+.计划底 {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--线);
+}
