@@ -62,3 +62,90 @@
   padding: 10px 12px 12px;
   border-top: 1px solid var(--线);
 }
+
+/* —— 气泡：只靠图标 + 左右 + 颜色区分，不写角色文字 —— */
+.对话区 {
+  --泡它: #24272e;
+  --泡我: #313847;
+  --泡边: #34383f;
+}
+[data-主题="亮"] .对话区 {
+  --泡它: #efeae2;
+  --泡我: #ccd8f2;
+  --泡边: #d9d3c8;
+}
+
+.消息组 { display: flex; align-items: flex-start; gap: 8px; margin-top: 16px; }
+.消息组:first-child { margin-top: 0; }
+.消息组.我 { flex-direction: row-reverse; }
+.组图标 {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  margin-top: 2px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--泡边);
+  background: var(--底更浅);
+  color: var(--字弱);
+}
+.消息组.我 .组图标 { color: var(--主); border-color: color-mix(in srgb, var(--主) 45%, var(--泡边)); }
+.组体 { min-width: 0; max-width: calc(100% - 40px); display: flex; flex-direction: column; gap: 4px; }
+.消息组.我 .组体 { align-items: flex-end; }
+.组名 { color: var(--字弱); font-size: 11px; padding-left: 2px; }
+
+.气泡 {
+  padding: 9px 13px;
+  border-radius: 12px;
+  border: 1px solid var(--泡边);
+  background: var(--泡它);
+  color: var(--字);
+  font-size: 12.5px;
+  line-height: 1.75;
+  max-width: 100%;
+}
+.消息组.我 .气泡 {
+  background: var(--泡我);
+  border-color: color-mix(in srgb, var(--主) 22%, var(--泡边));
+  border-bottom-right-radius: 4px;
+}
+.消息组.它 .气泡 { border-bottom-left-radius: 4px; }
+.气泡.出错 { border-color: color-mix(in srgb, var(--危) 55%, var(--泡边)); }
+.气泡脚 { display: flex; align-items: center; gap: 8px; margin-top: 4px; color: var(--字弱); }
+.气泡脚 .用量行 { margin: 0; }
+.气泡脚 .消息操作 { margin-left: auto; }
+
+/* —— 计划卡 —— */
+.计划卡头 { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.计划卡名 { color: var(--字); font-size: 13px; font-weight: 600; }
+.计划卡路 { color: var(--字弱); font-size: 11px; }
+.计划步表 {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  background: color-mix(in srgb, var(--底) 55%, transparent);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.计划步表 th {
+  text-align: left;
+  padding: 5px 8px;
+  color: var(--字弱);
+  font-weight: 500;
+  font-size: 11px;
+  border-bottom: 1px solid var(--泡边);
+}
+.计划步表 td {
+  padding: 5px 8px;
+  vertical-align: top;
+  border-bottom: 1px solid color-mix(in srgb, var(--泡边) 60%, transparent);
+}
+.计划步表 tr:last-child td { border-bottom: 0; }
+.计划文件 { color: var(--字弱); font-size: 11.5px; overflow-wrap: anywhere; }
+.计划卡脚 { display: flex; gap: 8px; margin-top: 10px; }
+
+/* —— 提问卡 —— */
+.提问问题 { color: var(--字); font-size: 12.5px; margin-bottom: 8px; }
+.提问选项 { display: flex; flex-wrap: wrap; gap: 6px; }

@@ -112,6 +112,43 @@ export const 工具表: 工具定义[] = [
     },
   },
   {
+    名称: "create_plan",
+    中文名: "建计划",
+    说明: "把要做的事写成一张计划表放进 计划/计划表/：每步一行（动作/目标文件/说明/执行结果留空）。只写计划文件，不改正文。",
+    写盘: false,
+    参数: {
+      标题: { 类型: "字符串", 必填: true, 说明: "计划标题，例如「第 28 章开写计划」" },
+      目标: { 类型: "字符串", 必填: true, 说明: "这一轮要达成什么，一句话" },
+      步骤: {
+        类型: "字符串",
+        必填: true,
+        说明:
+          'JSON 数组文本，每项 {"动作":"续写|同步台账|派活|读文件|查台账|查设定|查伏笔|查知情","目标文件":"章节号或路径","说明":"这一步要做什么"}',
+      },
+      涉及章节: { 类型: "字符串", 说明: "涉及哪几章，逗号分隔，例如 27,28" },
+    },
+  },
+  {
+    名称: "ask_user",
+    中文名: "问用户",
+    说明: "有问题要作者拍板时用它：把问题和选项抛给作者，本轮结束，等作者回答。不写盘。",
+    写盘: false,
+    参数: {
+      问题: { 类型: "字符串", 必填: true, 说明: "要问作者的问题，一句话说清" },
+      选项: { 类型: "字符串", 说明: "可选项，逗号分隔，例如「加独白,不加,先看素材」；留空＝自由回答" },
+    },
+  },
+  {
+    名称: "spawn_agent",
+    中文名: "派子智能体",
+    说明: "让集群里某一位成员单独跑一轮问答（不进并发池），把它的回答当作工具结果拿回来。",
+    写盘: false,
+    参数: {
+      成员或角色: { 类型: "字符串", 必填: true, 说明: "成员名（如「伏笔管家」）或角色（如「审校」「伏笔」「台账」）" },
+      任务: { 类型: "字符串", 必填: true, 说明: "要它干什么，一句话" },
+    },
+  },
+  {
     名称: "write_chapter",
     中文名: "写章节",
     说明: "把整章正文覆盖写成给定内容并提交。会改动正文文件，属于写盘工具，必须先得到作者确认。",
@@ -123,9 +160,28 @@ export const 工具表: 工具定义[] = [
   },
 ]
 
+/** 讨论模式的默认只读白名单：这些工具不碰任何文件。 */
+export const 只读白名单 = ["read_file", "query_ledger", "query_setting", "query_foreshadow", "query_knowledge"]
+
+/** 计划模式允许的：只读 + 建计划（执行阶段由代码逐步跑，不交给模型）。 */
+const 计划白名单 = [...只读白名单, "create_plan"]
+
+export function 按模式过滤(模式?: "对话" | "讨论" | "计划", 只读串?: string): 工具定义[] {
+  if (!模式 || 模式 === "对话") return 工具表
+  const 名单 =
+    模式 === "讨论"
+      ? (只读串 ?? "")
+          .split(/[,，\s]+/)
+          .map((项) => 项.trim())
+          .filter(Boolean)
+      : []
+  const 允许 = 模式 === "讨论" ? (名单.length > 0 ? 名单 : 只读白名单) : 计划白名单
+  return 工具表.filter((工具) => 允许.includes(工具.名称))
+}
+
 /** OpenAI 要求的 tools 字段；参数用 JSON Schema 描述，说明里写清中文口径。 */
-export function 工具声明们(): 工具声明[] {
-  return 工具表.map((工具) => {
+export function 工具声明们(模式?: "对话" | "讨论" | "计划", 只读串?: string): 工具声明[] {
+  return 按模式过滤(模式, 只读串).map((工具) => {
     const 属性: Record<string, unknown> = {}
     const 必填: string[] = []
     for (const [键, 说明] of Object.entries(工具.参数)) {
@@ -173,7 +229,8 @@ export function 校验参数(定义: 工具定义, 原始: unknown): { 参数: R
       if (!Number.isFinite(数)) return { 错误: "参数「" + 键 + "」要是数字——" + 说明.说明 }
       出[键] = 数
     } else {
-      出[键] = String(原)
+      // 结构化的东西（比如计划步骤）原样转成 JSON 文本，别变成 "[object Object]"
+      出[键] = typeof 原 === "string" ? String(原) : JSON.stringify(原)
     }
   }
   return { 参数: 出 }
@@ -218,6 +275,13 @@ export interface 工具环境 {
   查设定: (名: string) => Promise<{ 文本: string; 找到: boolean }>
   查伏笔: (只看: string) => Promise<string>
   查知情: (秘密: string, 人: string, 截至章: number | null) => Promise<string>
+  建计划: (
+    标题: string,
+    目标: string,
+    步骤: Array<{ 动作: string; 目标文件: string; 说明: string }>,
+    涉及章节: string,
+  ) => Promise<{ 路径: string; 步骤数: number }>
+  派子智能体: (成员或角色: string, 任务: string) => Promise<string>
   写章节: (章节号: number, 正文: string) => Promise<{ 成功: boolean; 说明: string }>
 }
 
@@ -225,6 +289,8 @@ export interface 执行结果 {
   需要确认: boolean
   回灌: string
   回执: 工具回执
+  /** 模型要用「问用户」时带上：主循环把它推成一条「提问」事件并结束本轮 */
+  提问题?: { 问题: string; 选项: string[] }
 }
 
 /** 参数进界面之前先瘦身：正文那种几万字的字段只留个头。 */
@@ -320,6 +386,43 @@ export async function 跑工具(名: string, 原始参数: unknown, 环境: 工�
       case "query_setting": {
         const 数据 = await 环境.查设定(String(参数.名))
         return 收尾(定义, 参数, 轮次, 数据.文本, 数据.找到 ? "命中 1 张卡" : "没找到这张卡")
+      }
+      case "create_plan": {
+        // 模型可能给 JSON 字符串，也可能直接给数组
+        const 步骤值: any = 参数.步骤
+        const 原始 = (typeof 步骤值 === "string" ? 步骤值 : JSON.stringify(步骤值 ?? [])).trim()
+        let 步骤们: Array<{ 动作: string; 目标文件: string; 说明: string }> = []
+        try {
+          const 解析 = JSON.parse(原始)
+          if (Array.isArray(解析)) 步骤们 = 解析.map((项: any) => ({ 动作: String(项?.动作 ?? ""), 目标文件: String(项?.目标文件 ?? ""), 说明: String(项?.说明 ?? "") }))
+        } catch {
+          步骤们 = []
+        }
+        if (步骤们.length === 0) {
+          return {
+            需要确认: false,
+            回灌: "建计划失败：步骤不是合法的 JSON 数组。要这样给：[{\"动作\":\"续写\",\"目标文件\":\"28\",\"说明\":\"写开场\"}]",
+            回执: { 名称: 定义.名称, 中文名: 定义.中文名, 参数: 摘要参数(参数), 状态: "失败", 轮次, 摘要: "步骤解析失败" },
+          }
+        }
+        const 结果 = await 环境.建计划(String(参数.标题), String(参数.目标), 步骤们, String(参数.涉及章节 ?? ""))
+        return 收尾(定义, 参数, 轮次, "计划表已生成：" + 结果.路径 + "（" + 结果.步骤数 + " 步）", "计划已落盘，等作者确认")
+      }
+      case "ask_user": {
+        const 选项 = String(参数.选项 ?? "")
+          .split(/[,，、]/)
+          .map((项) => 项.trim())
+          .filter(Boolean)
+        return {
+          需要确认: false,
+          回灌: "（已把问题交给作者，本轮结束等回答）",
+          回执: { 名称: 定义.名称, 中文名: 定义.中文名, 参数: 摘要参数(参数), 状态: "完成", 轮次, 摘要: "等作者回答" },
+          提问题: { 问题: String(参数.问题), 选项 },
+        }
+      }
+      case "spawn_agent": {
+        const 文本 = await 环境.派子智能体(String(参数.成员或角色), String(参数.任务))
+        return 收尾(定义, 参数, 轮次, 文本, "子智能体已跑完一轮")
       }
       case "query_knowledge": {
         const 文本 = await 环境.查知情(String(参数.秘密 ?? ""), String(参数.人 ?? ""), 参数.截至章 === undefined ? null : Number(参数.截至章))

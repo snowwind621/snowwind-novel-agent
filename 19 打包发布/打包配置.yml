@@ -27,13 +27,20 @@ extraMetadata:
 
 win:
   # 不签名，也不改写 exe 内部的图标与版本资源：都靠 rcedit，而 rcedit 来自 winCodeSign 包，
-  # 那个包里带着 macOS 的符号链接，Windows 没开「开发者模式」时解不开（要管理员权限）。
-  # 便携 exe 自己的版本信息由 NSIS 写，不依赖这一项。
+  # 那包里带 macOS 符号链接，Windows 没开「开发者模式」时解不开。
   signAndEditExecutable: false
+  # 产出安装包（双击安装、开始菜单与桌面快捷方式），不再出便携版。
   target:
-    - target: portable
+    - target: nsis
       arch:
         - x64
 
-portable:
-  artifactName: ${productName}-${version}-便携版.exe
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: 雪风小说工坊
+  artifactName: 雪风小说工坊-${version}-安装版.${ext}
+  deleteAppDataOnUninstall: false

@@ -18,9 +18,28 @@ export interface 工具回执 {
   摘要?: string
 }
 
+/** 「计划」事件里的计划表 */
+export interface 计划步 {
+  动作: string
+  目标文件: string
+  说明: string
+}
+
+export interface 计划卡 {
+  路径: string
+  标题: string
+  步骤: 计划步[]
+}
+
+/** 「提问」事件里的问题（选项可选） */
+export interface 提问卡 {
+  问题: string
+  选项?: string[]
+}
+
 export interface 对话事件 {
   请求号: string
-  类型: "思考" | "正文" | "结束" | "错误" | "用量" | "工具"
+  类型: "思考" | "正文" | "结束" | "错误" | "用量" | "工具" | "提问" | "计划"
   /** 「用量」时这里是一段 JSON（用量 结构） */
   文本: string
 }
@@ -120,6 +139,10 @@ export interface 对话条目 {
   用量?: 用量
   /** 工具回执气泡（谁固定是「系统」） */
   工具?: 工具回执
+  /** 计划表气泡 */
+  计划?: 计划卡
+  /** 问题气泡 */
+  提问?: 提问卡
 }
 
 export interface 同步结果 {

@@ -1,4 +1,4 @@
-// 只负责一件事：调 electron-builder 把「99 构建产物」打成 Windows 便携 exe，并报出产物路径与体积。
+// 只负责一件事：调 electron-builder 把「99 构建产物」打成 Windows 安装包（NSIS），并报出产物路径与体积。
 import { spawnSync } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"
@@ -29,7 +29,7 @@ const 入口 = path.join(根, "node_modules", "electron-builder", 用的入口)
 console.log("[打包] 正在产出 Windows 便携 exe，第一次会下载 NSIS 与签名工具，耐心等…")
 // 缓存与临时目录都跟着 dist 走，不往系统目录里撒：清 dist 就是彻底清干净；
 // 系统临时目录被限权/空间不够时，makensis 会报 "error creating mmap"，用自己的临时目录最省事。
-const 结果 = spawnSync(process.execPath, [入口, "--win", "portable", "--config", path.join(根, "19 打包发布", "打包配置.yml")], {
+const 结果 = spawnSync(process.execPath, [入口, "--win", "nsis", "--config", path.join(根, "19 打包发布", "打包配置.yml")], {
   cwd: 根,
   stdio: "inherit",
   env: {
@@ -57,4 +57,4 @@ for (const 名 of exe们) {
   合计 += 兆
   console.log("✅ " + 全 + "  " + 兆.toFixed(1) + " MB")
 }
-console.log("[打包] 合计 " + 合计.toFixed(1) + " MB。双击即可运行，不用安装；数据仍在 %APPDATA%\\snowwind-novel-agent。")
+console.log("[打包] 合计 " + 合计.toFixed(1) + " MB。双击安装即可用，会自动建开始菜单与桌面快捷方式；书库数据仍在 %APPDATA%\\snowwind-novel-agent，卸载不删。")

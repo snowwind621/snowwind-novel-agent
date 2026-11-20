@@ -10,7 +10,8 @@ import { 读设置, 写设置 } from "../14 配置密钥/设置存储"
 import { 记事件 } from "../13 共享黑板/事件日志"
 import { 拉模型清单, 流式对话, 流式对话带工具, 取调用策略 } from "../04 模型接入/网关客户端"
 import type { 对话消息 } from "../04 模型接入/网关客户端"
-import { 工具声明们, 跑工具, 解析约定块 } from "../06 智能体运行时/工具执行"
+import { 工具声明们, 跑工具, 解析约定块, 已确认, 按名找 } from "../06 智能体运行时/工具执行"
+import { 执行成员 } from "../06 智能体运行时/执行器"
 import { 投影台账, 投影设定, 投影伏笔, 投影知情 } from "../06 智能体运行时/书库投影"
 import type { 工具环境 } from "../06 智能体运行时/工具执行"
 import { 组装系统提示 } from "../05 编排内核/章节提示词"
@@ -98,7 +99,7 @@ export interface 处理器集 {
   处理: 通道处理
   流式: (
     请求: 对话请求,
-    回调: (类型: "思考" | "正文" | "用量" | "工具", 文本: string) => void,
+    回调: (类型: "思考" | "正文" | "用量" | "工具" | "提问" | "计划", 文本: string) => void,
     信号?: AbortSignal,
   ) => Promise<string>
   中止: (请求号: string) => boolean
@@ -462,7 +463,135 @@ export function 创建请求处理(
     })
   }
 
-  /** 六个工具的实现全部在这里接线：工具模块只负责校验、确认、回灌格式。 */
+  /** 建计划：落一张表进 计划/计划表/，执行结果列由系统回填。 */
+  async function 落计划表(
+    标题: string,
+    目标: string,
+    步骤们: Array<{ 动作: string; 目标文件: string; 说明: string }>,
+    涉及章节: string,
+  ): Promise<{ 路径: string; 步骤数: number }> {
+    if (!状态.项目) throw new Error("尚未打开书库")
+    const 日期 = new Date().toISOString().slice(0, 10)
+    const 干净 = 标题.replace(/[\\/:*?"<>|]/g, "_").slice(0, 40) || "计划"
+    const 相对 = 计划.计划表 + "/" + 日期 + " " + 干净 + ".md"
+    const 文件 = path.join(状态.项目.路径, 相对)
+    fs.mkdirSync(path.dirname(文件), { recursive: true })
+    const 确认词 = 读设置(数据目录).智能体.计划确认词
+    const 行们 = [
+      "# " + 标题,
+      "",
+      "> 目标：" + 目标,
+      "> 涉及章节：" + (涉及章节 || "—"),
+      "> 生成于 " + new Date().toLocaleString("zh-CN") + "；执行结果列由系统回填，作者说「" + 确认词 + "」后才逐条执行。",
+      "",
+      "| 序号 | 动作 | 目标文件 | 说明 | 执行结果 |",
+      "| --- | --- | --- | --- | --- |",
+      ...步骤们.map((步, 序) => "| " + (序 + 1) + " | " + 步.动作 + " | " + 步.目标文件 + " | " + 步.说明.replace(/\|/g, "／") + " |  |"),
+      "",
+    ]
+    await 原子写文本(文件, 行们.join("\n"))
+    await 提交(状态.项目.路径, "建计划：" + 标题, [相对])
+    记事件(数据目录, 状态.项目.路径, { 时间: new Date().toISOString(), 类型: "建计划", 发起者: "总控", 摘要: 标题 + "（" + 步骤们.length + " 步）" })
+    return { 路径: 相对, 步骤数: 步骤们.length }
+  }
+
+  /** 找最新的、还有空执行结果的计划表。 */
+  function 找待执行计划() {
+    if (!状态.项目) return null
+    const 目录 = path.join(状态.项目.路径, 计划.计划表)
+    let 名们: string[] = []
+    try {
+      名们 = fs
+        .readdirSync(目录)
+        .filter((名) => 名.endsWith(".md"))
+        .sort((甲, 乙) => fs.statSync(path.join(目录, 乙)).mtimeMs - fs.statSync(path.join(目录, 甲)).mtimeMs)
+    } catch {
+      return null
+    }
+    for (const 名 of 名们) {
+      const 相对 = 计划.计划表 + "/" + 名
+      const 行们 = fs.readFileSync(path.join(目录, 名), "utf8").split(/\r?\n/)
+      const 表头行 = 行们.findIndex((行) => 行.trim().startsWith("|") && 行.includes("动作") && 行.includes("执行结果"))
+      if (表头行 < 0) continue
+      const 拆 = (行: string) => 行.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((格) => 格.trim())
+      const 列 = 拆(行们[表头行])
+      const 序列 = 列.findIndex((项) => 项.includes("序号"))
+      const 动列 = 列.findIndex((项) => 项.includes("动作"))
+      const 文列 = 列.findIndex((项) => 项.includes("目标文件"))
+      const 说列 = 列.findIndex((项) => 项.includes("说明"))
+      const 结列 = 列.findIndex((项) => 项.includes("执行结果"))
+      const 步骤们: Array<{ 行号: number; 序号: number; 动作: string; 目标文件: string; 说明: string }> = []
+      for (let 行号 = 表头行 + 2; 行号 < 行们.length; 行号++) {
+        if (!行们[行号].trim().startsWith("|")) break
+        const 格 = 拆(行们[行号])
+        if ((格[结列] ?? "").trim() !== "") continue
+        步骤们.push({ 行号, 序号: Number(格[序列] ?? 0), 动作: (格[动列] ?? "").trim(), 目标文件: (格[文列] ?? "").trim(), 说明: (格[说列] ?? "").trim() })
+      }
+      if (步骤们.length > 0) return { 相对, 行们, 步骤们 }
+    }
+    return null
+  }
+
+  /** 计划里的一步 → 一次工具调用；翻不出来的返回 null（这一格写「跳过」）。 */
+  function 步到调用(步: { 动作: string; 目标文件: string; 说明: string }, 章节号: number) {
+    const 定义 = 按名找(步.动作)
+    if (!定义) return null
+    const 章 = Number((/\d+/.exec(步.目标文件) ?? /\d+/.exec(步.说明) ?? [])[0]) || 章节号
+    switch (定义.名称) {
+      case "continue_writing":
+        return { 名称: 定义.名称, 参数: { 章节号: 章, 指令: 步.说明 || "接着往下写" } }
+      case "sync_ledger":
+        return { 名称: 定义.名称, 参数: { 章节号: 章 } }
+      case "dispatch_cluster":
+        return { 名称: 定义.名称, 参数: { 任务: 步.说明 || "看看这一章接下来怎么写", 章节号: 章 } }
+      case "read_file":
+        return { 名称: 定义.名称, 参数: { 路径: 步.目标文件 || "书卷.yaml" } }
+      case "query_ledger":
+        return { 名称: 定义.名称, 参数: { 台账: 步.目标文件, 关键词: 步.说明 } }
+      case "query_setting":
+        return { 名称: 定义.名称, 参数: { 名: 步.说明 || 步.目标文件 } }
+      case "query_foreshadow":
+        return { 名称: 定义.名称, 参数: { 只看: 步.说明 || "待兑现" } }
+      case "query_knowledge":
+        return { 名称: 定义.名称, 参数: {} }
+      default:
+        return null
+    }
+  }
+
+  /** 计划执行：只由代码驱动。逐条跑 → 回填执行结果列 → 提交 → 回一句总结。 */
+  async function 执行计划(
+    计划项: NonNullable<ReturnType<typeof 找待执行计划>>,
+    回调: (类型: "思考" | "正文" | "用量" | "工具" | "提问" | "计划", 文本: string) => void,
+  ): Promise<string> {
+    const 环境 = 造工具环境("确认")
+    const 最新 = 状态.项目?.统计.最新章节 ?? 0
+    const 结果行们: string[] = []
+    回调("计划", JSON.stringify({ 动作: "开始执行", 文件: 计划项.相对, 步骤: 计划项.步骤们.length }))
+    for (const 步 of 计划项.步骤们) {
+      const 调用 = 步到调用(步, 最新)
+      let 结果文案 = ""
+      if (!调用) {
+        结果文案 = "跳过：不支持的步骤类型「" + 步.动作 + "」"
+      } else {
+        const 执行 = await 跑工具(调用.名称, 调用.参数, 环境, 1)
+        回调("工具", JSON.stringify(执行.回执))
+        结果文案 = 执行.需要确认 ? "未执行：需要作者确认" : 执行.回执.状态 === "完成" ? "成功：" + (执行.回执.摘要 ?? "已完成") : "失败：" + (执行.回执.摘要 ?? "未知原因")
+      }
+      结果行们.push(步.序号 + ". " + 步.动作 + " → " + 结果文案)
+      const 格们 = 计划项.行们[步.行号].trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((格) => 格.trim())
+      格们[格们.length - 1] = 结果文案.replace(/\|/g, "／")
+      计划项.行们[步.行号] = "| " + 格们.join(" | ") + " |"
+    }
+    if (状态.项目) {
+      await 原子写文本(path.join(状态.项目.路径, 计划项.相对), 计划项.行们.join("\n"))
+      await 提交(状态.项目.路径, "执行计划：" + path.basename(计划项.相对, ".md"), [计划项.相对])
+    }
+    回调("计划", JSON.stringify({ 动作: "执行完毕", 文件: 计划项.相对 }))
+    return "计划已执行完（" + 计划项.步骤们.length + " 步），结果已写回 " + 计划项.相对 + "：\n" + 结果行们.join("\n")
+  }
+
+  /** 十个工具的实现全部在这里接线：工具模块只负责校验、确认、回灌格式。 */
   function 造工具环境(用户输入: string): 工具环境 {
     return {
       用户输入,
@@ -529,6 +658,31 @@ export function 创建请求处理(
           .map((项) => 项.编号 + " " + 项.名称 + "｜" + 项.状态 + "｜埋 ch" + (项.埋章 ?? "—") + "｜搁置 " + 项.搁置章数 + "｜间隔 " + (项.参考间隔 ?? "—") + (项.超期 ? "｜超期" : 项.久置 ? "｜久置" : ""))
         return "共 " + 选.length + " 条（全书 " + 全.length + " 条）：\n" + 行们.join("\n")
       },
+      建计划: 落计划表,
+      派子智能体: async (成员或角色, 任务) => {
+        if (!状态.项目) return "尚未打开书库。"
+        const 成员们 = await 取集群()
+        const 命中 =
+          成员们.find((项) => 项.名称 === 成员或角色 || 项.角色 === 成员或角色) ??
+          成员们.find((项) => 项.名称.includes(成员或角色) || 项.角色.includes(成员或角色))
+        if (!命中) return "集群里没有「" + 成员或角色 + "」。可用：" + 成员们.map((项) => 项.名称 + "(" + 项.角色 + ")").join("、")
+        const 设置 = 读设置(数据目录)
+        const 结果 = await 执行成员({
+          根目录: 状态.项目.路径,
+          数据目录,
+          成员: 命中,
+          任务,
+          关键词: 任务.split(/[，。、\s]+/).filter(Boolean).slice(0, 12),
+          基址: 设置.模型.网关地址,
+          密钥: 设置.模型.API密钥,
+          模型: 设置.模型.分工.助手,
+          策略: 取调用策略(设置.模型),
+          单卡注入字数: 设置.上下文.单卡注入字数,
+          技能: 设置.智能体.技能,
+          章节号: 状态.项目.统计.最新章节,
+        })
+        return "【" + 结果.成员 + "｜" + 结果.角色 + "】" + (结果.成功 ? "" : "（失败）") + "\n" + 结果.产出
+      },
       查知情: async (秘密, 人, 截至章) => {
         if (!状态.项目) return "尚未打开书库。"
         const 截 = 截至章 && 截至章 > 0 ? 截至章 : undefined
@@ -566,10 +720,17 @@ export function 创建请求处理(
    */
   async function 流式(
     请求: 对话请求,
-    回调: (类型: "思考" | "正文" | "用量" | "工具", 文本: string) => void,
+    回调: (类型: "思考" | "正文" | "用量" | "工具" | "提问" | "计划", 文本: string) => void,
     信号?: AbortSignal,
   ): Promise<string> {
     const 设置 = 读设置(数据目录)
+    const 模式 = 请求.模式 ?? "对话"
+    const 模式词 =
+      模式 === "讨论"
+        ? "【本轮是讨论】只读：不要写任何文件、不要改正文、不要提交；把不同意见摆出来，最后给结论。"
+        : 模式 === "计划"
+          ? "【本轮是计划】优先用「建计划」把要做的事写成计划表（每步一行），先别动正文与台账；写完告诉作者计划表在哪、等他确认。"
+          : ""
     const 基础系统 = 请求.系统提示 || 组装系统提示({
       书名: 状态.项目?.书名 ?? "未命名作品",
       章节号: 0,
@@ -579,8 +740,9 @@ export function 创建请求处理(
     })
     const 系统 = [
       基础系统,
+      模式词,
       "",
-      "【可用工具】续写 / 改写 / 同步台账 / 派活 / 读文件 / 写章节 / 查台账 / 查设定 / 查伏笔。查事实优先用结构化查询，别自己用正则抠表格。要干活就直接调用工具，绝不假装已经做过。",
+      "【可用工具】续写 / 改写 / 同步台账 / 派活 / 读文件 / 写章节 / 查台账 / 查设定 / 查伏笔 / 查知情 / 建计划 / 问用户 / 派子智能体。查事实优先用结构化查询，别自己用正则抠表格。要干活就直接调用工具，绝不假装已经做过。",
       "如果你的接口不支持工具调用，就单独输出一段 json 代码块，形如：",
       '```json',
       '{"工具":"续写","参数":{"章节号":27,"指令":"写得冷一点","字数上限":300}}',
@@ -599,6 +761,12 @@ export function 创建请求处理(
     let 最终 = ""
 
     try {
+      // 计划模式 + 作者说了确认词 + 有未执行的计划 → 直接按步骤跑（不交给模型）
+      if (模式 === "计划" && 已确认(请求.用户输入)) {
+        const 计划项 = 找待执行计划()
+        if (计划项) return await 执行计划(计划项, 回调)
+      }
+
       for (let 轮 = 1; 轮 <= 4; 轮++) {
         const 结果 = await 流式对话带工具({
           ...取调用策略(设置.模型),
@@ -606,7 +774,7 @@ export function 创建请求处理(
           密钥: 设置.模型.API密钥,
           模型: 请求.模型,
           消息,
-          工具: 轮 < 4 ? 工具声明们() : undefined,
+          工具: 轮 < 4 ? 工具声明们(模式, 设置.智能体.只读工具) : undefined,
           温度: 请求.温度 ?? 设置.模型.温度,
           信号: 用信号,
           回调,
@@ -636,6 +804,11 @@ export function 创建请求处理(
         for (const 调用 of 调用们) {
           const 执行 = await 跑工具(调用.名称, 调用.参数, 环境, 轮)
           回调("工具", JSON.stringify(执行.回执))
+          // 「问用户」：推一条提问事件，本轮就结束，等作者回答
+          if (执行.提问题) {
+            回调("提问", JSON.stringify(执行.提问题))
+            return 执行.提问题.问题
+          }
           if (执行.需要确认) return 执行.回灌
           if (真调用) 消息.push({ role: "tool", tool_call_id: 调用.id ?? "", content: 执行.回灌 })
           else 消息.push({ role: "user", content: "（工具结果）\n" + 执行.回灌 })
