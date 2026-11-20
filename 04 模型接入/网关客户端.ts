@@ -1,4 +1,4 @@
-// 只负责一件事：跟 OpenAI 兼容网关说话（取模型清单、流式收字、收用量，带超时与可重试）。
+// 只负责一件事：跟 OpenAI 兼容网关说话（流式收字、收用量、收工具调用，带超时与可重试）。
 
 import type { 用量 } from "../03 进程桥接/通道"
 
@@ -12,11 +12,42 @@ export interface 调用策略 {
   最大词元?: number
 }
 
+/** 一条对话消息；带工具调用时 assistant 消息会挂 tool_calls，工具结果用 role=tool 回去。 */
+export interface 对话消息 {
+  role: "system" | "user" | "assistant" | "tool"
+  content: string
+  tool_calls?: Array<{ id: string; type: "function"; function: { name: string; arguments: string } }>
+  tool_call_id?: string
+}
+
+/** 给模型看的工具声明（OpenAI tools 字段）。 */
+export interface 工具声明 {
+  type: "function"
+  function: { name: string; description: string; parameters: Record<string, unknown> }
+}
+
+/** 模型要调的一次工具；参数是原始 JSON 字符串，交给上层校验。 */
+export interface 工具调用 {
+  id: string
+  名称: string
+  参数: string
+}
+
+export interface 流式结果 {
+  文本: string
+  工具调用: 工具调用[]
+  /** 网关不认 tools 字段（400/422）时置真：上层要退化到「约定 JSON 块」 */
+  工具被拒: boolean
+}
+
 export interface 流式参数 extends 调用策略 {
   基址: string
   密钥: string
   模型: string
-  消息: Array<{ role: "system" | "user" | "assistant"; content: string }>
+  消息: 对话消息[]
+  /** 传了就会带 tools 字段；网关不支持时自动退回不带 tools 再试一次 */
+  工具?: 工具声明[]
+  工具选择?: "auto" | "none"
   信号?: AbortSignal
   /** 「用量」的文本是一段 JSON（用量 结构），上层原样往下传即可 */
   回调: (类型: "思考" | "正文" | "用量", 文本: string) => void
@@ -113,23 +144,24 @@ export async function 拉模型清单(基址: string, 密钥: string, 超时秒 
   return 列表.map((项: any) => String(项?.id ?? "")).filter(Boolean)
 }
 
-function 请求体(参数: 流式参数, 带用量: boolean): string {
+function 请求体(参数: 流式参数, 带用量: boolean, 带工具: boolean): string {
   return JSON.stringify({
     model: 参数.模型,
     messages: 参数.消息,
     stream: true,
     ...(带用量 ? { stream_options: { include_usage: true } } : {}),
+    ...(带工具 && 参数.工具 && 参数.工具.length > 0 ? { tools: 参数.工具, tool_choice: 参数.工具选择 ?? "auto" } : {}),
     temperature: 参数.温度 ?? 策略兜底.温度,
     max_tokens: 参数.最大词元 ?? 策略兜底.最大词元,
   })
 }
 
 /** 发一次；超时/连接失败/5xx 由外层决定要不要重试。 */
-async function 发一次(参数: 流式参数, 带用量: boolean, 尝试: 一次尝试): Promise<Response> {
+async function 发一次(参数: 流式参数, 带用量: boolean, 带工具: boolean, 尝试: 一次尝试): Promise<Response> {
   return fetch(参数.基址.replace(/\/$/, "") + "/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: "Bearer " + 参数.密钥 },
-    body: 请求体(参数, 带用量),
+    body: 请求体(参数, 带用量, 带工具),
     signal: 尝试.信号,
   })
 }
@@ -137,9 +169,9 @@ async function 发一次(参数: 流式参数, 带用量: boolean, 尝试: 一�
 /**
  * 带重试地拿到一个可用响应。
  * 只重试「超时 / 连接失败 / 5xx」；用户自己按了停止（外部信号）立刻放弃。
- * 已经吐字之后不再重试——那在 流式对话 的读流阶段，不经过这里。
+ * 已经吐字之后不再重试——那在下面的读流阶段，不经过这里。
  */
-async function 发请求(参数: 流式参数, 带用量: boolean): Promise<Response> {
+async function 发请求(参数: 流式参数, 带用量: boolean, 带工具: boolean): Promise<Response> {
   const 重试次数 = Math.max(0, Math.floor(参数.重试次数 ?? 策略兜底.重试次数))
   const 超时秒 = 参数.超时秒 ?? 策略兜底.超时秒
   const 间隔 = Math.max(0, 参数.重试间隔秒 ?? 策略兜底.重试间隔秒) * 1000
@@ -147,13 +179,12 @@ async function 发请求(参数: 流式参数, 带用量: boolean): Promise<Resp
   for (let 轮 = 0; 轮 <= 重试次数; 轮++) {
     const 尝试 = 组一次尝试(超时秒, 参数.信号)
     try {
-      const 响应 = await 发一次(参数, 带用量, 尝试)
+      const 响应 = await 发一次(参数, 带用量, 带工具, 尝试)
       if (响应.ok || !可重试状态(响应.status)) return 响应
       最后错误 = new Error("网关返回 " + 响应.status)
     } catch (错误: any) {
       if (参数.信号?.aborted) throw 错误
-      if (尝试.超时了()) 最后错误 = new Error("网关超时（" + 超时秒 + " 秒）")
-      else 最后错误 = 错误
+      最后错误 = 尝试.超时了() ? new Error("网关超时（" + 超时秒 + " 秒）") : 错误
     } finally {
       尝试.收尾()
     }
@@ -162,10 +193,26 @@ async function 发请求(参数: 流式参数, 带用量: boolean): Promise<Resp
   throw 最后错误 ?? new Error("网关请求失败")
 }
 
-export async function 流式对话(参数: 流式参数): Promise<string> {
-  // 有的网关不认 stream_options 会直接 400/422：退一步不带它重发一次，拿不到用量就当没有，不报错。
-  let 响应 = await 发请求(参数, true)
-  if (响应.status === 400 || 响应.status === 422) 响应 = await 发请求(参数, false)
+/**
+ * 建立流式连接，尽量保住能力：
+ * 1) 先带 stream_options（为了拿用量）；
+ * 2) 400/422 就去掉 stream_options 再试（有的网关不认）；
+ * 3) 还不行、而且这次带了 tools，就去掉 tools 再试，并告诉上层「工具被拒」——上层退化到约定 JSON 块。
+ */
+async function 建连(参数: 流式参数): Promise<{ 响应: Response; 工具被拒: boolean }> {
+  const 带工具 = Boolean(参数.工具 && 参数.工具.length > 0) && 参数.工具选择 !== "none"
+  let 响应 = await 发请求(参数, true, 带工具)
+  if (响应.status === 400 || 响应.status === 422) 响应 = await 发请求(参数, false, 带工具)
+  if ((响应.status === 400 || 响应.status === 422) && 带工具) {
+    响应 = await 发请求(参数, false, false)
+    return { 响应, 工具被拒: true }
+  }
+  return { 响应, 工具被拒: false }
+}
+
+/** 核心：一边收字一边攒工具调用。 */
+export async function 流式对话带工具(参数: 流式参数): Promise<流式结果> {
+  const { 响应, 工具被拒 } = await 建连(参数)
   if (!响应.ok || !响应.body) {
     const 详情 = await 响应.text().catch(() => "")
     throw new Error("网关返回 " + 响应.status + " " + 详情.slice(0, 200))
@@ -176,6 +223,7 @@ export async function 流式对话(参数: 流式参数): Promise<string> {
   let 缓冲 = ""
   let 全文 = ""
   let 已报用量 = false
+  const 工具槽 = new Map<number, 工具调用>()
 
   for (;;) {
     const { value, done } = await 阅读器.read()
@@ -190,21 +238,42 @@ export async function 流式对话(参数: 流式参数): Promise<string> {
       if (!数据 || 数据 === "[DONE]") continue
       try {
         const 片段 = JSON.parse(数据)
-          // 用量块常常是最后一块，而且这一块的 choices 是空数组——不能因为取不到 delta 就跳过。
-          if (片段?.usage && !已报用量) {
-            已报用量 = true
-            参数.回调("用量", JSON.stringify(规范用量(片段.usage)))
-          }
-          const 增量 = 片段?.choices?.[0]?.delta ?? {}
-          if (增量.reasoning_content) 参数.回调("思考", String(增量.reasoning_content))
-          if (增量.content) {
-            全文 += String(增量.content)
+        // 用量块常常是最后一块，而且这一块的 choices 是空数组——不能因为取不到 delta 就跳过。
+        if (片段?.usage && !已报用量) {
+          已报用量 = true
+          参数.回调("用量", JSON.stringify(规范用量(片段.usage)))
+        }
+        const 增量 = 片段?.choices?.[0]?.delta ?? {}
+        if (增量.reasoning_content) 参数.回调("思考", String(增量.reasoning_content))
+        if (增量.content) {
+          全文 += String(增量.content)
           参数.回调("正文", String(增量.content))
+        }
+        // 工具调用是分片来的：按 index 攒 id / 名字 / 参数串
+        for (const 片 of Array.isArray(增量.tool_calls) ? 增量.tool_calls : []) {
+          const 序 = Number(片?.index ?? 0)
+          const 槽 = 工具槽.get(序) ?? { id: "", 名称: "", 参数: "" }
+          if (片?.id) 槽.id = String(片.id)
+          if (片?.function?.name) 槽.名称 += String(片.function.name)
+          if (片?.function?.arguments) 槽.参数 += String(片.function.arguments)
+          工具槽.set(序, 槽)
         }
       } catch {
         /* 心跳行与不完整分片直接跳过 */
       }
     }
   }
-  return 全文
+
+  const 工具调用们 = [...工具槽.entries()]
+    .sort((甲, 乙) => 甲[0] - 乙[0])
+    .map(([, 槽], 序) => ({ ...槽, id: 槽.id || "call_" + 序 }))
+    .filter((槽) => 槽.名称.trim().length > 0)
+
+  return { 文本: 全文, 工具调用: 工具调用们, 工具被拒 }
+}
+
+/** 老接口：只要正文。工具调用由 流式对话带工具 提供。 */
+export async function 流式对话(参数: 流式参数): Promise<string> {
+  const 结果 = await 流式对话带工具(参数)
+  return 结果.文本
 }

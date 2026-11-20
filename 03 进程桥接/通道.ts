@@ -45,8 +45,21 @@ export interface 用量 {
   缓存未命中: number | null
 }
 
-/** 对话流的增量类型。「用量」的文本是一段 JSON。 */
-export type 对话事件类型 = "思考" | "正文" | "结束" | "错误" | "用量"
+/** 对话流的增量类型。「用量」「工具」的文本都是一段 JSON。 */
+export type 对话事件类型 = "思考" | "正文" | "结束" | "错误" | "用量" | "工具"
+
+/** 一次工具调用的回执：界面上显示成一条中间消息（谁、参数、结果多长）。 */
+export interface 工具回执 {
+  名称: string
+  中文名: string
+  参数: Record<string, unknown>
+  状态: "开始" | "完成" | "失败" | "待确认"
+  /** 第几轮工具循环（从 1 开始，最多 4 轮） */
+  轮次: number
+  结果字数?: number
+  /** 一句话摘要；失败/待确认时是要给用户看的原因 */
+  摘要?: string
+}
 
 export interface 书架项 {
   路径: string

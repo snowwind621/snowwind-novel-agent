@@ -8,7 +8,10 @@ import { 读文本, 原子写文本, 存在, 列目录 } from "../11 文件工�
 import { 提交 } from "../11 文件工作区/Git提交"
 import { 读设置, 写设置 } from "../14 配置密钥/设置存储"
 import { 记事件 } from "../13 共享黑板/事件日志"
-import { 拉模型清单, 流式对话, 取调用策略 } from "../04 模型接入/网关客户端"
+import { 拉模型清单, 流式对话, 流式对话带工具, 取调用策略 } from "../04 模型接入/网关客户端"
+import type { 对话消息 } from "../04 模型接入/网关客户端"
+import { 工具声明们, 跑工具, 解析约定块 } from "../06 智能体运行时/工具执行"
+import type { 工具环境 } from "../06 智能体运行时/工具执行"
 import { 组装系统提示 } from "../05 编排内核/章节提示词"
 import { 同步章节台账 } from "../09 台账同步/同步台账"
 import { 路径, 派活归档, 计划 } from "../10 书库检索/书库布局"
@@ -92,7 +95,11 @@ async function 读书库树(根: string): Promise<文件树结果> {
 export interface 处理器集 {
   状态: { 项目: 项目摘要 | null; 看板: 看板数据 | null }
   处理: 通道处理
-  流式: (请求: 对话请求, 回调: (类型: "思考" | "正文", 文本: string) => void, 信号?: AbortSignal) => Promise<string>
+  流式: (
+    请求: 对话请求,
+    回调: (类型: "思考" | "正文" | "用量" | "工具", 文本: string) => void,
+    信号?: AbortSignal,
+  ) => Promise<string>
   中止: (请求号: string) => boolean
   派活: (任务: string, 编号: number, 回调?: (事件: any) => void) => Promise<any>
   取集群: () => Promise<集群成员[]>
@@ -336,35 +343,188 @@ export function 创建请求处理(
     [通道.保存设置]: async (新设置: 设置) => 写设置(数据目录, 新设置),
   }
 
-  async function 流式(请求: 对话请求, 回调: (类型: "思考" | "正文", 文本: string) => void, 信号?: AbortSignal): Promise<string> {
+  /** 拿一章的标题与正文（读不到就空串）——给工具用，不抛错。 */
+  async function 取章与正文(章节号: number): Promise<{ 标题: string; 正文: string }> {
+    if (!状态.项目) return { 标题: "", 正文: "" }
+    for (const 卷 of 状态.项目.卷) {
+      const 章 = 卷.章节.find((x) => x.编号 === 章节号)
+      if (!章) continue
+      const 正文 = await 读文本(path.join(状态.项目.路径, 章.文件)).catch(() => "")
+      return { 标题: 章.标题, 正文 }
+    }
+    return { 标题: "", 正文: "" }
+  }
+
+  /** 工具用的续写：不碰界面回调，只把正文拿回来。 */
+  async function 续写给工具(章节号: number, 指令: string, 字数上限: number): Promise<string> {
     const 设置 = 读设置(数据目录)
-    const 系统 = 请求.系统提示 || 组装系统提示({
+    const { 标题, 正文 } = await 取章与正文(章节号)
+    const 系统 = [
+      组装系统提示({
+        书名: 状态.项目?.书名 ?? "未命名作品",
+        章节号,
+        章节标题: 标题 || "第" + 章节号 + "章",
+        伏笔: 状态.看板?.伏笔 ?? [],
+        正文尾部: 正文,
+      }),
+      "",
+      "【续写任务】",
+      "从正文断点直接往下写，不要复述已有内容，不要解释，不要小标题。",
+      "每段以两个全角空格开头（　　），对话用中文引号。",
+    ].join("\n")
+    return await 流式对话({
+      ...取调用策略(设置.模型),
+      基址: 设置.模型.网关地址,
+      密钥: 设置.模型.API密钥,
+      模型: 设置.模型.分工.执笔,
+      消息: [
+        { role: "system", content: 系统 },
+        { role: "user", content: 指令?.trim() || "接着往下写，大约 " + Math.max(100, 字数上限) + " 字。" },
+      ],
+      最大词元: Math.min(8000, Math.max(512, Math.round(字数上限 * 2))),
+      回调: () => {},
+    })
+  }
+
+  /** 工具用的改写：同样只回正文。 */
+  async function 改写给工具(章节号: number, 原文: string, 要求: string): Promise<string> {
+    const 设置 = 读设置(数据目录)
+    const { 标题 } = await 取章与正文(章节号)
+    const 系统 = [
+      "你是《" + (状态.项目?.书名 ?? "未命名作品") + "》的执笔，正在改第 " + 章节号 + " 章《" + (标题 || "第" + 章节号 + "章") + "》里的一段。",
+      "只输出改写后的正文本身，不要解释、不要加引号或代码块；保持篇幅量级与叙事视角；每段以两个全角空格开头。",
+    ].join("\n")
+    return await 流式对话({
+      ...取调用策略(设置.模型),
+      基址: 设置.模型.网关地址,
+      密钥: 设置.模型.API密钥,
+      模型: 设置.模型.分工.执笔,
+      消息: [
+        { role: "system", content: 系统 },
+        { role: "user", content: "【要改的原文】\n" + 原文 + "\n\n【作者要求】" + 要求 },
+      ],
+      温度: 0.85,
+      回调: () => {},
+    })
+  }
+
+  /** 六个工具的实现全部在这里接线：工具模块只负责校验、确认、回灌格式。 */
+  function 造工具环境(用户输入: string): 工具环境 {
+    return {
+      用户输入,
+      续写: 续写给工具,
+      改写: 改写给工具,
+      同步台账: async (章节号) => {
+        const 结果 = await 处理[通道.台账同步](章节号)
+        return { 成功: Boolean(结果?.成功), 说明: String(结果?.说明 ?? "") }
+      },
+      派活: async (任务, 章节号) => {
+        const 结果 = await 派活流(任务, 章节号)
+        return { 汇总: String(结果?.汇总 ?? ""), 各自: Array.isArray(结果?.各自) ? 结果.各自 : [] }
+      },
+      读文件: async (相对路径, 上限) => {
+        const 文件 = await 处理[通道.书库读文件](相对路径)
+        const 文本 = String(文件?.文本 ?? "")
+        return {
+          文本: 上限 > 0 && 文本.length > 上限 ? 文本.slice(0, 上限) + "\n…（截到 " + 上限 + " 字）" : 文本,
+          是文本: Boolean(文件?.是文本),
+        }
+      },
+      写章节: async (章节号, 正文) => {
+        const 结果 = await 处理[通道.保存章节](章节号, 正文)
+        return { 成功: Boolean(结果?.成功), 说明: String(结果?.说明 ?? "") }
+      },
+    }
+  }
+
+  /**
+   * 对话主循环：最多 4 轮工具调用。
+   * 真 tool_calls 优先；网关不支持 tools（或模型不会用）时退化成解析约定 JSON 块。
+   * 写盘工具在「工具执行」里挡着，没得到确认就停下等作者回一句「确认」。
+   */
+  async function 流式(
+    请求: 对话请求,
+    回调: (类型: "思考" | "正文" | "用量" | "工具", 文本: string) => void,
+    信号?: AbortSignal,
+  ): Promise<string> {
+    const 设置 = 读设置(数据目录)
+    const 基础系统 = 请求.系统提示 || 组装系统提示({
       书名: 状态.项目?.书名 ?? "未命名作品",
       章节号: 0,
       章节标题: "创作讨论",
       伏笔: 状态.看板?.伏笔 ?? [],
       正文尾部: "",
     })
+    const 系统 = [
+      基础系统,
+      "",
+      "【可用工具】续写 / 改写 / 同步台账 / 派活 / 读文件 / 写章节。要干活就直接调用工具，绝不假装已经做过。",
+      "如果你的接口不支持工具调用，就单独输出一段 json 代码块，形如：",
+      '```json',
+      '{"工具":"续写","参数":{"章节号":27,"指令":"写得冷一点","字数上限":300}}',
+      '```',
+      "系统会执行它、把结果回给你，你再接着答。写盘类工具（同步台账 / 派活 / 写章节）必须先得到作者确认。",
+    ].join("\n")
+
+    const 消息: 对话消息[] = [
+      { role: "system", content: 系统 },
+      { role: "user", content: 请求.用户输入 },
+    ]
+    const 环境 = 造工具环境(请求.用户输入)
     const 控制器 = new AbortController()
     进行中.set(请求.请求号, 控制器)
+    const 用信号 = 信号 ?? 控制器.signal
+    let 最终 = ""
+
     try {
-      return await 流式对话({
-        ...取调用策略(设置.模型),
-        基址: 设置.模型.网关地址,
-        密钥: 设置.模型.API密钥,
-        模型: 请求.模型,
-        消息: [
-          { role: "system", content: 系统 },
-          { role: "user", content: 请求.用户输入 },
-        ],
-        温度: 请求.温度 ?? 设置.模型.温度,
-        信号: 信号 ?? 控制器.signal,
-        回调,
-      })
+      for (let 轮 = 1; 轮 <= 4; 轮++) {
+        const 结果 = await 流式对话带工具({
+          ...取调用策略(设置.模型),
+          基址: 设置.模型.网关地址,
+          密钥: 设置.模型.API密钥,
+          模型: 请求.模型,
+          消息,
+          工具: 轮 < 4 ? 工具声明们() : undefined,
+          温度: 请求.温度 ?? 设置.模型.温度,
+          信号: 用信号,
+          回调,
+        })
+        最终 = 结果.文本
+
+        const 真调用 = 结果.工具调用.length > 0
+        const 调用们: Array<{ id?: string; 名称: string; 参数: unknown }> = 真调用
+          ? 结果.工具调用.map((项) => ({ id: 项.id, 名称: 项.名称, 参数: 项.参数 }))
+          : 解析约定块(结果.文本)
+        if (调用们.length === 0) return 最终
+
+        消息.push({
+          role: "assistant",
+          content: 结果.文本,
+          ...(真调用
+            ? {
+                tool_calls: 结果.工具调用.map((项) => ({
+                  id: 项.id,
+                  type: "function" as const,
+                  function: { name: 项.名称, arguments: 项.参数 },
+                })),
+              }
+            : {}),
+        })
+
+        for (const 调用 of 调用们) {
+          const 执行 = await 跑工具(调用.名称, 调用.参数, 环境, 轮)
+          回调("工具", JSON.stringify(执行.回执))
+          if (执行.需要确认) return 执行.回灌
+          if (真调用) 消息.push({ role: "tool", tool_call_id: 调用.id ?? "", content: 执行.回灌 })
+          else 消息.push({ role: "user", content: "（工具结果）\n" + 执行.回灌 })
+        }
+      }
+      return 最终 || "工具连了 4 轮还没收口，先停下：直接告诉我下一步怎么走。"
     } finally {
       进行中.delete(请求.请求号)
     }
   }
+
 
   async function 取集群(): Promise<集群成员[]> {
     if (!状态.项目) return []
