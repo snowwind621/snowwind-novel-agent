@@ -1,0 +1,72 @@
+// 只负责一件事：让一个智能体把一次任务干完，并把过程记进会话簿。
+import { 流式对话 } from "../04 模型接入/网关客户端"
+import type { 集群成员 } from "./成员目录"
+import { 装配上下文 } from "./上下文装配"
+import { 记一笔 } from "./会话簿"
+
+export interface 执行参数 {
+  根目录: string
+  数据目录: string
+  成员: 集群成员
+  任务: string
+  关键词: string[]
+  基址: string
+  密钥: string
+  模型: string
+  章节号?: number
+}
+
+export interface 执行结果 {
+  成员: string
+  角色: string
+  产出: string
+  用时毫秒: number
+  成功: boolean
+}
+
+export async function 执行成员(参数: 执行参数): Promise<执行结果> {
+  const 起 = Date.now()
+  const { 系统, 用户 } = await 装配上下文({
+    根目录: 参数.根目录,
+    数据目录: 参数.数据目录,
+    成员: 参数.成员,
+    任务: 参数.任务,
+    关键词: 参数.关键词,
+  })
+
+  let 正文 = ""
+  try {
+    await 流式对话({
+      基址: 参数.基址,
+      密钥: 参数.密钥,
+      模型: 参数.模型,
+      消息: [
+        { role: "system", content: 系统 },
+        { role: "user", content: 用户 },
+      ],
+      温度: 0.4,
+      最大词元: 6000,
+      回调: (类型, 文本) => {
+        if (类型 === "正文") 正文 += 文本
+      },
+    })
+    const 干净 = 正文.trim()
+    if (!干净) throw new Error("模型没有给正文")
+    记一笔(参数.数据目录, 参数.根目录, {
+      时间: new Date().toISOString(),
+      智能体: 参数.成员.名称,
+      任务: 参数.任务,
+      产出: 干净.slice(0, 1200),
+      章节: 参数.章节号,
+    })
+    return { 成员: 参数.成员.名称, 角色: 参数.成员.角色, 产出: 干净, 用时毫秒: Date.now() - 起, 成功: true }
+  } catch (错误: any) {
+    return {
+      成员: 参数.成员.名称,
+      角色: 参数.成员.角色,
+      产出: "没能完成：" + String(错误?.message ?? 错误).slice(0, 160),
+      用时毫秒: Date.now() - 起,
+      成功: false,
+    }
+  }
+}

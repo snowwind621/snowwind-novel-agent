@@ -1,0 +1,413 @@
+:root {
+  --底: #14151a;
+  --底浅: #1b1d24;
+  --底更浅: #23262f;
+  --线: #2c3039;
+  --线强: #3a3f4b;
+  --字: #dcdfe6;
+  --字弱: #8b919e;
+  --主: #7aa2f7;
+  --主淡: #1f2640;
+  --警: #e0af68;
+  --危: #f7768e;
+  --好: #9ece6a;
+  --滚动条: #333844;
+  --滚动条悬停: #4a5162;
+  --阴影: 0 8px 28px rgba(0, 0, 0, 0.35);
+}
+
+[data-主题="亮"] {
+  --底: #faf9f7;
+  --底浅: #ffffff;
+  --底更浅: #f2f0ec;
+  --线: #e4e0d9;
+  --线强: #d2ccc2;
+  --字: #26241f;
+  --字弱: #7d7972;
+  --主: #3b6ef0;
+  --主淡: #e8eefd;
+  --警: #a8721a;
+  --危: #c8344d;
+  --好: #3d7d3a;
+  --滚动条: #d8d3ca;
+  --滚动条悬停: #b8b2a7;
+  --阴影: 0 8px 24px rgba(60, 50, 30, 0.12);
+}
+
+* { box-sizing: border-box; }
+
+html, body, #根 { height: 100%; margin: 0; }
+
+body {
+  background: var(--底);
+  color: var(--字);
+  font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
+  font-size: 14px;
+  overflow: hidden;
+  transition: background-color 0.18s ease, color 0.18s ease;
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--滚动条);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--滚动条悬停); background-clip: content-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+
+.框架 {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 1000px;
+}
+
+.顶栏 {
+  height: 48px;
+  flex: 0 0 48px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  background: var(--底浅);
+  border-bottom: 1px solid var(--线);
+}
+.书名 { font-weight: 600; letter-spacing: 0.4px; font-size: 14.5px; }
+.微信息 { color: var(--字弱); font-size: 12px; }
+.顶栏右 { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+button,
+.按钮 {
+  background: var(--底更浅);
+  color: var(--字);
+  border: 1px solid var(--线);
+  border-radius: 7px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: inherit;
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+button:hover { border-color: var(--主); color: var(--主); }
+button:focus-visible { outline: 2px solid var(--主); outline-offset: 1px; }
+button:disabled { opacity: 0.42; cursor: not-allowed; }
+button:disabled:hover { border-color: var(--线); color: var(--字); }
+
+.主体 {
+  display: grid;
+  grid-template-columns: 300px 1fr 420px;
+  flex: 1;
+  min-height: 0;
+}
+
+.左栏 {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--线);
+  background: var(--底浅);
+}
+.分段 {
+  display: flex;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--线);
+  flex: 0 0 auto;
+}
+.分段按钮 {
+  flex: 1;
+  padding: 6px 0;
+  border-radius: 7px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--字弱);
+  font-size: 12.5px;
+}
+.分段按钮:hover { color: var(--字); border-color: var(--线); }
+.分段按钮.选中 {
+  background: var(--主淡);
+  color: var(--主);
+  border-color: var(--主淡);
+  font-weight: 600;
+}
+.左栏体 { flex: 1; min-height: 0; overflow-y: auto; padding: 6px 0 14px; }
+
+.中栏 { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--底); }
+.右栏 {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--线);
+  background: var(--底浅);
+}
+
+.卷标题 {
+  padding: 12px 14px 6px;
+  color: var(--字弱);
+  font-size: 11.5px;
+  letter-spacing: 1px;
+  display: flex;
+  justify-content: space-between;
+}
+.章项 {
+  padding: 7px 14px 7px 16px;
+  cursor: pointer;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  border-left: 2px solid transparent;
+  transition: background-color 0.12s ease;
+}
+.章项:hover { background: var(--底更浅); }
+.章项.选中 { background: var(--主淡); border-left-color: var(--主); color: var(--主); }
+.章号 { color: var(--字弱); font-size: 11.5px; min-width: 34px; font-variant-numeric: tabular-nums; }
+.章题 { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.章字 { color: var(--字弱); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+.编辑器头 {
+  height: 42px;
+  flex: 0 0 42px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--线);
+  color: var(--字弱);
+  font-size: 12.5px;
+}
+.编辑器头 strong { color: var(--字); font-weight: 600; font-size: 14px; }
+.编辑器头 .右 { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+.正文 {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: var(--底);
+  color: var(--字);
+  padding: 28px 40px 80px;
+  font-family: "Microsoft YaHei", "Noto Sans SC", serif;
+  font-size: 16.5px;
+  line-height: 2.05;
+  letter-spacing: 0.35px;
+}
+
+.面板体 { flex: 1; min-height: 0; overflow-y: auto; padding: 12px; }
+.对话区 { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 12px; gap: 10px; }
+
+.统计行 { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+.胶囊 {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  line-height: 1.7;
+  border: 1px solid var(--线);
+  color: var(--字弱);
+  white-space: nowrap;
+}
+.胶囊.危 { color: var(--危); border-color: var(--危); background: transparent; }
+.胶囊.警 { color: var(--警); border-color: var(--警); background: transparent; }
+.胶囊.好 { color: var(--好); border-color: var(--好); background: transparent; }
+
+.伏笔项 {
+  padding: 9px 11px;
+  border: 1px solid var(--线);
+  border-radius: 9px;
+  margin-bottom: 8px;
+  background: var(--底更浅);
+  transition: border-color 0.15s ease, transform 0.1s ease;
+}
+.伏笔项:hover { border-color: var(--线强); }
+.伏笔项.超期 { border-color: var(--危); }
+.伏笔头 { display: flex; gap: 8px; align-items: baseline; }
+.伏笔号 { color: var(--主); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.伏笔名 { flex: 1; font-size: 13px; }
+.伏笔尾 { color: var(--字弱); font-size: 11.5px; margin-top: 4px; line-height: 1.6; }
+
+.搜索框 {
+  width: 100%;
+  padding: 7px 10px;
+  margin-bottom: 10px;
+  background: var(--底);
+  border: 1px solid var(--线);
+  border-radius: 7px;
+  color: var(--字);
+  outline: none;
+  font-family: inherit;
+  font-size: 12.5px;
+}
+.搜索框:focus { border-color: var(--主); }
+
+.流 {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--底);
+  border: 1px solid var(--线);
+  border-radius: 10px;
+  padding: 12px 14px;
+  white-space: pre-wrap;
+  line-height: 1.9;
+  font-size: 13.5px;
+}
+.思考区 {
+  color: var(--字弱);
+  font-size: 12px;
+  white-space: pre-wrap;
+  border-left: 2px solid var(--线强);
+  padding-left: 10px;
+  margin-bottom: 10px;
+  line-height: 1.75;
+}
+.输入行 { display: flex; gap: 8px; flex: 0 0 auto; }
+.输入行 > div { display: flex; flex-direction: column; gap: 6px; flex: 0 0 68px; }
+.输入行 > div > button { width: 100%; padding: 8px 0; }
+.输入框 {
+  flex: 1;
+  min-height: 66px;
+  max-height: 180px;
+  resize: vertical;
+  background: var(--底);
+  border: 1px solid var(--线);
+  border-radius: 8px;
+  color: var(--字);
+  padding: 9px 11px;
+  outline: none;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.输入框:focus { border-color: var(--主); }
+
+.遮罩 {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.42);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+.设置框 {
+  width: 660px;
+  max-height: 84vh;
+  overflow-y: auto;
+  background: var(--底浅);
+  border: 1px solid var(--线);
+  border-radius: 14px;
+  padding: 22px 24px;
+  box-shadow: var(--阴影);
+}
+.设置框 h2 { margin: 0 0 4px; font-size: 16px; }
+.字段 { margin-top: 14px; }
+.字段 label { display: block; color: var(--字弱); font-size: 12px; margin-bottom: 5px; }
+.字段 input, .字段 select {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--底);
+  border: 1px solid var(--线);
+  border-radius: 7px;
+  color: var(--字);
+  outline: none;
+  font-family: inherit;
+  font-size: 13px;
+}
+.字段 input:focus, .字段 select:focus { border-color: var(--主); }
+.两列 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.底部行 { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
+.空态 { color: var(--字弱); text-align: center; padding: 44px 16px; line-height: 2; font-size: 13px; }
+.左栏体::-webkit-scrollbar-thumb, .面板体::-webkit-scrollbar-thumb { background-clip: content-box; }
+.徽 { font-size: 11px; padding: 1px 7px; border-radius: 5px; border: 1px solid var(--线); color: var(--字弱); }
+.徽.已完成 { color: var(--好); border-color: var(--好); }
+.徽.超期 { color: var(--危); border-color: var(--危); }
+
+.分册行 {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--线);
+  font-size: 12.5px;
+}
+.分册行:last-child { border-bottom: 0; }
+
+.消息 { margin-bottom: 16px; }
+.消息头 {
+  font-size: 11.5px;
+  color: var(--字弱);
+  margin-bottom: 5px;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.消息体 { white-space: pre-wrap; line-height: 1.9; font-size: 13.5px; }
+.谁-你 .消息体 { color: var(--主); opacity: 0.9; }
+.谁-系统 .消息体 { color: var(--字弱); }
+.谁-集群 .消息体 {
+  border-left: 2px solid var(--主);
+  padding-left: 10px;
+}
+.明细 {
+  margin-top: 8px;
+  border-top: 1px dashed var(--线);
+  padding-top: 8px;
+  font-size: 12px;
+  color: var(--字弱);
+}
+.明细 summary { cursor: pointer; color: var(--主); }
+.明细项 { margin: 8px 0; line-height: 1.75; white-space: pre-wrap; }
+.明细项 b { color: var(--字); font-weight: 600; }
+
+.成员项 {
+  border: 1px solid var(--线);
+  border-radius: 8px;
+  padding: 7px 9px;
+  margin-bottom: 6px;
+  background: var(--底更浅);
+}
+.成员头 { display: flex; gap: 8px; align-items: baseline; }
+.成员名 { flex: 1; font-size: 13px; }
+.小按钮 {
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 1.6;
+  border-radius: 5px;
+  color: var(--字弱);
+  background: transparent;
+}
+.小按钮:hover { color: var(--主); }
+
+.成员尾 { color: var(--字弱); font-size: 11px; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.菜单 {
+  position: absolute;
+  right: 0;
+  top: 34px;
+  min-width: 160px;
+  background: var(--底浅);
+  border: 1px solid var(--线);
+  border-radius: 9px;
+  box-shadow: var(--阴影);
+  padding: 5px;
+  z-index: 40;
+}
+.菜单项 {
+  padding: 7px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.菜单项:hover { background: var(--主淡); color: var(--主); }
+
+.分组标题 {
+  padding: 14px 12px 6px;
+  color: var(--字弱);
+  font-size: 11.5px;
+  letter-spacing: 0.8px;
+}

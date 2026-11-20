@@ -1,0 +1,28 @@
+{
+  "name": "snowwind-novel-agent",
+  "private": true,
+  "version": "0.1.0",
+  "description": "雪风小说工坊 · AI 主导的长篇小说写作工作台",
+  "type": "module",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "build": "vite build && node 脚本/构建.mjs",
+    "start": "electron .",
+    "dev": "npm run build && npm run start",
+    "预览": "node dist/预览.cjs"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.17",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.2.1",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  }
+}

@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.log
+er.txt
+ou.txt
+诊断.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
