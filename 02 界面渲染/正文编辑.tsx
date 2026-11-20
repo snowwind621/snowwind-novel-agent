@@ -1,24 +1,24 @@
-// 只负责一件事：显示并编辑一章正文，给出源码 / 分屏 / 预览三种视图与插入语法的工具栏。
+// 只负责一件事：显示并编辑一章正文，给出富文本 / 源码 / 分屏 / 预览四种视图与插入语法的工具栏。
 import React, { useEffect, useRef, useState } from "react"
 import { 计字数 } from "./接口"
-import { 渲染Markdown } from "./编辑器渲染"
+import { 渲染Markdown, 取回Markdown } from "./编辑器渲染"
 import "./编辑器样式.css"
 import { 图标 } from "./图标"
 import type { 图标名 } from "./图标"
 
-type 视图模式 = "源码" | "分屏" | "预览"
+type 视图模式 = "富文本" | "源码" | "分屏" | "预览"
 const 模式键 = "编辑模式"
-const 模式们: 视图模式[] = ["源码", "分屏", "预览"]
-const 模式图标: Record<视图模式, 图标名> = { 源码: "代码", 分屏: "分栏", 预览: "眼睛" }
+const 模式们: 视图模式[] = ["富文本", "源码", "分屏", "预览"]
+const 模式图标: Record<视图模式, 图标名> = { 富文本: "笔", 源码: "代码", 分屏: "分栏", 预览: "眼睛" }
 
 function 读模式(): 视图模式 {
   try {
     const 存 = localStorage.getItem(模式键)
-    if (存 === "分屏" || 存 === "预览") return 存
+    if (存 === "富文本" || 存 === "源码" || 存 === "分屏" || 存 === "预览") return 存
   } catch {
-    /* 读不到本地记忆就退回源码 */
+    /* 读不到本地记忆就用富文本 */
   }
-  return "源码"
+  return "富文本"
 }
 
 interface 改后 {
@@ -91,8 +91,13 @@ export function 正文编辑(属性: {
   const { 已开书库, 编号, 标题, 正文, 脏, 改, 保存, 报选区, 状态字 } = 属性
   const [模式, set模式] = useState<视图模式>(读模式)
   const 框 = useRef<HTMLTextAreaElement | null>(null)
+  const 富 = useRef<HTMLDivElement | null>(null)
   const 预览 = useRef<HTMLDivElement | null>(null)
   const 待选 = useRef<{ 起: number; 止: number } | null>(null)
+  const 合成中 = useRef(false)
+  const 计时 = useRef<number | null>(null)
+  const 上次渲染 = useRef("")
+  const 上次编号 = useRef<number | null>(null)
 
   useEffect(() => {
     try {
@@ -101,6 +106,24 @@ export function 正文编辑(属性: {
       /* 存不下就算了，不影响写作 */
     }
   }, [模式])
+
+  // 进入富文本 / 换章 / 外部改了正文（续写插入、采纳改写）时，才把 Markdown 灌进 contenteditable。
+  // 用户自己敲出来的内容不回灌，否则光标会跳、输入法会被打断。
+  useEffect(() => {
+    if (模式 !== "富文本") return
+    const 元素 = 富.current
+    if (!元素) return
+    if (合成中.current) return
+    if (计时.current !== null) {
+      window.clearTimeout(计时.current)
+      计时.current = null
+    }
+    const 换章 = 上次编号.current !== 编号
+    上次编号.current = 编号
+    if (!换章 && 上次渲染.current === 正文 && 元素.innerHTML !== "") return
+    上次渲染.current = 正文
+    元素.innerHTML = 渲染Markdown(正文, { 缩进当文字: true }) || "<p><br></p>"
+  }, [模式, 正文, 编号])
 
   // 工具栏改完文本要把光标/选区放回去，否则光标会跳到末尾。
   useEffect(() => {
@@ -113,7 +136,7 @@ export function 正文编辑(属性: {
     报选区(值.起, 值.止)
   }, [正文, 模式])
 
-  // 三种视图都要能 Ctrl+S：预览里没有输入框，挂在 window 上最省事。
+  // 四种视图都要能 Ctrl+S：预览和富文本里都没有输入框，挂在 window 上最省事。
   useEffect(() => {
     const 按键 = (事件: KeyboardEvent) => {
       if ((事件.ctrlKey || 事件.metaKey) && 事件.key.toLowerCase() === "s") {
@@ -144,6 +167,174 @@ export function 正文编辑(属性: {
     const 结果 = 做(正文, 起, 止)
     待选.current = { 起: 结果.起, 止: 结果.止 }
     改(结果.文)
+  }
+
+  /** 富文本 → 源码：DOM 只做显示，落盘的永远是 Markdown 纯文本。 */
+  const 同步到源码 = () => {
+    const 元素 = 富.current
+    if (!元素 || 合成中.current) return
+    const 换行 = 正文.includes("\r\n") ? "\r\n" : "\n"
+    const 新文 = 取回Markdown(元素, 换行)
+    if (新文 === 正文) return
+    上次渲染.current = 新文
+    改(新文)
+  }
+
+  const 富输入 = () => {
+    if (合成中.current) return
+    // 回车分会插一个新段：趁 input 这一刻把上一段的缩进抄过来（放 keydown 里会因为默认动作还没做完而落空）
+    补首行缩进()
+    if (计时.current !== null) window.clearTimeout(计时.current)
+    计时.current = window.setTimeout(() => {
+      计时.current = null
+      同步到源码()
+    }, 150)
+  }
+
+  /** 回车后浏览器会插一个空段：把上一段的缩进抄过来，中文小说才不用每次手打空格。 */
+  const 补首行缩进 = () => {
+    const 根 = 富.current
+    if (!根 || 合成中.current) return
+    const 选 = window.getSelection()
+    if (!选 || 选.rangeCount === 0) return
+    const 范围 = 选.getRangeAt(0)
+    let 块: HTMLElement | null =
+      范围.startContainer.nodeType === 1 ? (范围.startContainer as HTMLElement) : 范围.startContainer.parentElement
+    while (块 && 块.parentElement !== 根) 块 = 块.parentElement
+    if (!块 || (块.textContent ?? "").trim() !== "") return
+    const 前 = 块.previousElementSibling as HTMLElement | null
+    const 前缀 = /^[\u3000 ]*/.exec(前?.textContent ?? "")?.[0] ?? ""
+    if (!前缀) return
+    const 文本 = document.createTextNode(前缀)
+    范围.insertNode(文本)
+    范围.setStartAfter(文本)
+    范围.collapse(true)
+    选.removeAllRanges()
+    选.addRange(范围)
+  }
+
+  /** 取光标所在的最外层块（p / h2 / ul / blockquote…）。 */
+  const 当前块 = (): HTMLElement | null => {
+    const 根 = 富.current
+    const 选 = window.getSelection()
+    if (!根 || !选 || 选.rangeCount === 0) return null
+    let 节点: Node | null = 选.getRangeAt(0).startContainer
+    if (节点.nodeType === 3) 节点 = 节点.parentNode
+    while (节点 && 节点.parentElement !== 根) 节点 = 节点.parentElement
+    return (节点 as HTMLElement | null) ?? null
+  }
+
+  /** 行内记号：把选区换成「语法包起来再渲染」的节点。没选中就插一对记号，光标停中间。 */
+  const 富行内 = (左: string, 右: string) => {
+    const 选 = window.getSelection()
+    if (!选 || 选.rangeCount === 0) return
+    const 范围 = 选.getRangeAt(0)
+    const 选中 = 范围.toString()
+    if (!选中) {
+      const 文本 = document.createTextNode(左 + 右)
+      范围.insertNode(文本)
+      const 新 = document.createRange()
+      新.setStart(文本, 左.length)
+      新.collapse(true)
+      选.removeAllRanges()
+      选.addRange(新)
+      富.current?.focus()
+      同步到源码()
+      return
+    }
+    const 模板 = document.createElement("div")
+    模板.innerHTML = 渲染Markdown(左 + 选中 + 右)
+    const 段 = 模板.firstElementChild
+    const 源 = 段 && (段.tagName === "P" || 段.tagName === "DIV") ? 段 : 模板
+    const 片段 = document.createDocumentFragment()
+    while (源.firstChild) 片段.appendChild(源.firstChild)
+    范围.deleteContents()
+    范围.insertNode(片段)
+    选.collapseToEnd()
+    富.current?.focus()
+    同步到源码()
+  }
+
+  const 换块 = (造: (旧块: HTMLElement) => HTMLElement | null) => {
+    const 根 = 富.current
+    const 块 = 当前块()
+    if (!根 || !块) return
+    const 新块 = 造(块)
+    if (!新块) return
+    块.replaceWith(新块)
+    根.focus()
+    同步到源码()
+  }
+
+  const 富标题 = () =>
+    换块((块) => {
+      const 新 = document.createElement(块.tagName === "H2" ? "P" : "H2")
+      新.innerHTML = 块.innerHTML.replace(/^[\u3000\s]+/, "")
+      return 新
+    })
+
+  const 富引用 = () =>
+    换块((块) => {
+      const 内 = document.createElement("P")
+      if (块.tagName === "BLOCKQUOTE") {
+        内.innerHTML = 块.innerHTML
+        return 内
+      }
+      内.innerHTML = 块.innerHTML
+      const 包 = document.createElement("BLOCKQUOTE")
+      包.appendChild(内)
+      return 包
+    })
+
+  const 富列表 = (有序: boolean) =>
+    换块((块) => {
+      if (块.tagName === "UL" || 块.tagName === "OL") {
+        const 新 = document.createElement("P")
+        新.innerHTML = Array.from(块.children)
+          .map((项) => (项 as HTMLElement).innerHTML)
+          .join("")
+        return 新
+      }
+      const 表 = document.createElement(有序 ? "OL" : "UL")
+      const 项 = document.createElement("LI")
+      项.innerHTML = 块.innerHTML
+      表.appendChild(项)
+      return 表
+    })
+
+  const 富分割线 = () => {
+    const 根 = 富.current
+    const 块 = 当前块()
+    if (!根 || !块) return
+    const 线 = document.createElement("HR")
+    const 新段 = document.createElement("P")
+    新段.innerHTML = "<br>"
+    块.after(线)
+    线.after(新段)
+    const 选 = window.getSelection()
+    const 范围 = document.createRange()
+    范围.setStart(新段, 0)
+    范围.collapse(true)
+    选?.removeAllRanges()
+    选?.addRange(范围)
+    根.focus()
+    同步到源码()
+  }
+
+  const 富做 = (名: string) => {
+    if (名 === "粗体") return 富行内("**", "**")
+    if (名 === "斜体") return 富行内("*", "*")
+    if (名 === "行内代码") return 富行内("`", "`")
+    if (名 === "标题") return 富标题()
+    if (名 === "引用") return 富引用()
+    if (名 === "无序") return 富列表(false)
+    if (名 === "有序") return 富列表(true)
+    if (名 === "分割线") return 富分割线()
+  }
+
+  const 切模式 = (新: 视图模式) => {
+    if (模式 === "富文本" && 新 !== "富文本") 同步到源码()
+    set模式(新)
   }
 
   /** 分屏同步滚动：按百分比对齐就够，不做行到行映射。 */
@@ -181,7 +372,7 @@ export function 正文编辑(属性: {
               key={一个}
               className={"编辑器-模式按钮" + (模式 === 一个 ? " 选中" : "")}
               title={"切到" + 一个 + "视图"}
-              onClick={() => set模式(一个)}
+              onClick={() => 切模式(一个)}
             >
               <图标 名={模式图标[一个]} 大小={15} />
               {一个}
@@ -190,17 +381,49 @@ export function 正文编辑(属性: {
         </div>
         <span className="编辑器-分隔" />
         {模式 === "预览" ? (
-          <span className="编辑器-提示">预览只读；要改正文切回源码或分屏，Ctrl+S 照样能保存。</span>
+          <span className="编辑器-提示">预览只读；要改正文切回富文本或源码，Ctrl+S 照样能保存。</span>
         ) : (
           <div className="编辑器-工具栏">
             {工具按钮们.map((钮) => (
-              <button key={钮.名} className="编辑器-工具按钮 纯图标" title={钮.说明} onClick={() => 插入(钮.做)} aria-label={钮.名}>
+              <button
+                key={钮.名}
+                className="编辑器-工具按钮 纯图标"
+                title={钮.说明}
+                aria-label={钮.名}
+                onClick={() => (模式 === "富文本" ? 富做(钮.名) : 插入(钮.做))}
+              >
                 <图标 名={钮.图标} 大小={15} />
               </button>
             ))}
           </div>
         )}
       </div>
+
+      {模式 === "富文本" ? (
+        <div
+          ref={富}
+          className="编辑器-预览 编辑器-富文本"
+          contentEditable
+          suppressContentEditableWarning
+          spellCheck={false}
+          role="textbox"
+          aria-multiline="true"
+          aria-label="正文（富文本）"
+          onInput={富输入}
+          onBlur={同步到源码}
+          onCompositionStart={() => {
+            合成中.current = true
+            if (计时.current !== null) {
+              window.clearTimeout(计时.current)
+              计时.current = null
+            }
+          }}
+          onCompositionEnd={() => {
+            合成中.current = false
+            同步到源码()
+          }}
+        />
+      ) : null}
 
       {模式 === "源码" ? (
         <textarea

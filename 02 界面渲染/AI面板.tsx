@@ -6,10 +6,14 @@ import { 组装系统提示 } from "../05 编排内核/章节提示词"
 import { 该压缩, 取要压的, 造摘要提示, 拼用户输入, 估算词元, 续摘要 } from "../06 智能体运行时/对话压缩"
 import type { 对话条 } from "../06 智能体运行时/对话压缩"
 import { 图标 } from "./图标"
+import type { 图标名 } from "./图标"
 
 type 功能 = "对话" | "续写" | "改写选中" | "同步台账" | "派活"
 
 const 功能们: 功能[] = ["对话", "续写", "改写选中", "同步台账", "派活"]
+
+/** 说话人 → 图标：你/集群是人，总编/改写是笔，系统提示是警告。 */
+const 说话人图标: Record<对话条目["谁"], 图标名> = { 你: "用户群", 总编: "笔", 改写: "笔", 集群: "用户群", 系统: "警告" }
 
 const 占位: Record<功能, string> = {
   对话: "问问总编，或让它拆任务。Enter 发送，Shift+Enter 换行。",
@@ -356,28 +360,29 @@ export function AI面板(属性: {
         ) : null}
         {消息们.map((条) => (
           <div key={条.id} className={"消息 谁-" + 条.谁}>
-            <div className="消息头">
-              <span>{条.谁}</span>
-              {条.时间 ? <span className="微信息">{时刻(条.时间)}</span> : null}
-              {条.进行中 ? <span className="微信息">正在生成…</span> : null}
-              {条.被替代 ? <span className="微信息">（已被新版替代）</span> : null}
-              <span className="消息操作">
-                <button className="小按钮 图标按钮" onClick={() => void 复制(条)} title="复制这条消息">
-                  <图标 名="复制" 大小={14} />
-                </button>
-                {条.出错 ? (
-                  <button className="小按钮 图标按钮" onClick={() => void 重跑(条)} title="重试这一条">
-                    <图标 名="刷新" 大小={14} />
-                  </button>
-                ) : null}
-                {!条.出错 && !条.进行中 && !条.被替代 && (条.谁 === "总编" || 条.谁 === "改写") && 原问(条) ? (
-                  <button className="小按钮 图标按钮" onClick={() => void 重跑(条)} title="重新生成（旧回答标注为已替代）">
-                    <图标 名="刷新" 大小={14} />
-                  </button>
-                ) : null}
-              </span>
-            </div>
             <div className="气泡">
+              <div className="气泡头">
+                <图标 名={说话人图标[条.谁]} 大小={14} />
+                <span className="气泡名">{条.谁}</span>
+                {条.时间 ? <span className="微信息">{时刻(条.时间)}</span> : null}
+                {条.进行中 ? <span className="微信息">正在生成…</span> : null}
+                {条.被替代 ? <span className="微信息">（已被新版替代）</span> : null}
+                <span className="消息操作">
+                  <button className="小按钮 图标按钮" onClick={() => void 复制(条)} title="复制这条消息">
+                    <图标 名="复制" 大小={14} />
+                  </button>
+                  {条.出错 ? (
+                    <button className="小按钮 图标按钮" onClick={() => void 重跑(条)} title="重试这一条">
+                      <图标 名="刷新" 大小={14} />
+                    </button>
+                  ) : null}
+                  {!条.出错 && !条.进行中 && !条.被替代 && (条.谁 === "总编" || 条.谁 === "改写") && 原问(条) ? (
+                    <button className="小按钮 图标按钮" onClick={() => void 重跑(条)} title="重新生成（旧回答标注为已替代）">
+                      <图标 名="刷新" 大小={14} />
+                    </button>
+                  ) : null}
+                </span>
+              </div>
               <div className="消息体">{条.文本}</div>
               {条.谁 === "改写" && !条.进行中 && 条.文本.trim() ? (
                 <div className="气泡动作">

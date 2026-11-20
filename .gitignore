@@ -1,5 +1,6 @@
 node_modules/
 99 构建产物/
+dist/
 *.log
 er.txt
 ou.txt

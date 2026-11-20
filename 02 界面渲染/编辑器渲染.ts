@@ -37,12 +37,14 @@ function 行内(已转义: string, 深 = 0): string {
   })
 }
 
-/** 中文字体里行首那两个全角空格就是「首行缩进」，换算成 em 交给 CSS，文字本身不再带空格。 */
-function 渲染段落(原行: string): string {
+/** 中文字体里行首那两个全角空格就是「首行缩进」，换算成 em 交给 CSS，文字本身不再带空格。
+ *  富文本编辑模式下不能这么做：编辑区里的空格必须是真字符，否则用户删不掉、也回写不回源码。 */
+function 渲染段落(原行: string, 缩进当文字: boolean): string {
   const 前导 = /^[\u3000 ]*/.exec(原行)?.[0] ?? ""
+  const 文字 = 原行.slice(前导.length).replace(/\s+$/, "")
+  if (缩进当文字) return "<p>" + 行内(转义(前导 + 文字)) + "</p>"
   const 全角 = (前导.match(/\u3000/g) ?? []).length
   const em = 全角 + (前导.length - 全角) * 0.5
-  const 文字 = 原行.slice(前导.length).replace(/\s+$/, "")
   const 式 = em > 0 ? ' style="text-indent:' + em + 'em"' : ""
   return "<p" + 式 + ">" + 行内(转义(文字)) + "</p>"
 }
@@ -89,8 +91,14 @@ function 渲染列表(项们: 列表项[]): string {
   return 出.join("\n")
 }
 
+export interface 渲染选项 {
+  /** 富文本编辑区用：行首全角空格原样留在文字里，不用 CSS 缩进 */
+  缩进当文字?: boolean
+}
+
 /** 唯一的出口：正文 Markdown → HTML。返回的 HTML 里所有文字都来自转义后的文本。 */
-export function 渲染Markdown(源: string): string {
+export function 渲染Markdown(源: string, 选项?: 渲染选项): string {
+  const 缩进当文字 = Boolean(选项?.缩进当文字)
   const 行们 = String(源 ?? "").replace(/\r\n?/g, "\n").split("\n")
   const 出: string[] = []
   let 序 = 0
@@ -185,8 +193,136 @@ export function 渲染Markdown(源: string): string {
       continue
     }
 
-    出.push(渲染段落(行))
+    出.push(渲染段落(行, 缩进当文字))
     序++
   }
   return 出.join("\n")
+}
+// ────────────────────────── 富文本模式：DOM → Markdown 回写 ──────────────────────────
+
+/** 行内节点的反向渲染：把 <strong>/<em>/<code>/<del>/<a> 还原成 Markdown 记号。 */
+function 行内回写(节点: Node): string {
+  if (节点.nodeType === 3) return (节点.textContent ?? "").replace(/\u00a0/g, " ")
+  if (节点.nodeType !== 1) return ""
+  const 元素 = 节点 as HTMLElement
+  const 内 = Array.from(元素.childNodes).map(行内回写).join("")
+  switch (元素.tagName) {
+    case "STRONG":
+    case "B":
+      return 内.trim() ? "**" + 内 + "**" : 内
+    case "EM":
+    case "I":
+      return 内.trim() ? "*" + 内 + "*" : 内
+    case "DEL":
+    case "S":
+    case "STRIKE":
+      return 内.trim() ? "~~" + 内 + "~~" : 内
+    case "CODE":
+      return 内 ? "`" + 内 + "`" : 内
+    case "BR":
+      return "\n"
+    case "A": {
+      const 址 = 元素.getAttribute("href") ?? ""
+      return 址 && 内 ? "[" + 内 + "](" + 址 + ")" : 内
+    }
+    default:
+      return 内
+  }
+}
+
+function 取行们(文本: string): string[] {
+  return 文本.replace(/\u00a0/g, " ").split("\n")
+}
+
+function 列表回写(列表: HTMLElement, 层: number): string[] {
+  const 出: string[] = []
+  const 有序 = 列表.tagName === "OL"
+  let 序 = 0
+  for (const 项 of Array.from(列表.children)) {
+    if (项.tagName !== "LI") continue
+    序++
+    const 前缀 = "  ".repeat(Math.max(0, 层)) + (有序 ? 序 + ". " : "- ")
+    const 子表 = Array.from(项.children).filter((子) => 子.tagName === "UL" || 子.tagName === "OL") as HTMLElement[]
+    const 文字 = Array.from(项.childNodes)
+      .filter((子) => !(子.nodeType === 1 && ["UL", "OL"].includes((子 as HTMLElement).tagName)))
+      .map(行内回写)
+      .join("")
+      .replace(/\n+$/, "")
+    出.push(前缀 + 文字)
+    for (const 子 of 子表) 出.push(...列表回写(子, 层 + 1))
+  }
+  return 出
+}
+
+function 表格回写(表: HTMLElement): string[] {
+  const 行们 = Array.from(表.querySelectorAll("tr")).map((行) =>
+    Array.from(行.children).map((格) => 行内回写(格).replace(/\n+/g, " ").trim()),
+  )
+  if (行们.length === 0) return []
+  const 头 = 行们[0]
+  return [
+    "| " + 头.join(" | ") + " |",
+    "| " + 头.map(() => "---").join(" | ") + " |",
+    ...行们.slice(1).map((行) => "| " + 头.map((_, 序) => 行[序] ?? "").join(" | ") + " |"),
+  ]
+}
+
+/**
+ * 富文本编辑区的反向渲染：DOM → Markdown。
+ * 只做「认得自己渲染出来的那些标签」这一件事，认不出的标签一律当纯文本。
+ * 换行符跟原稿保持一致（原稿是 CRLF 就还回 CRLF），免得改一个字整篇 diff。
+ */
+export function 取回Markdown(根: HTMLElement, 换行 = "\n"): string {
+  const 行们: string[] = []
+  const 收 = (节点: Node) => {
+    if (节点.nodeType === 3) {
+      for (const 行 of 取行们(节点.textContent ?? "")) 行们.push(行.replace(/\s+$/, ""))
+      return
+    }
+    if (节点.nodeType !== 1) return
+    const 元素 = 节点 as HTMLElement
+    const 标签 = 元素.tagName
+    if (/^H[1-6]$/.test(标签)) {
+      行们.push("#".repeat(Number(标签[1])) + " " + 行内回写(元素).replace(/^[\u3000\s]+/, "").trim())
+      return
+    }
+    if (标签 === "HR") {
+      行们.push("---")
+      return
+    }
+    if (标签 === "PRE") {
+      行们.push("```")
+      for (const 行 of 取行们(元素.textContent ?? "")) 行们.push(行)
+      行们.push("```")
+      return
+    }
+    if (标签 === "BLOCKQUOTE") {
+      for (const 行 of 取回Markdown(元素, "\n").split("\n")) 行们.push(行 ? "> " + 行 : ">")
+      return
+    }
+    if (标签 === "UL" || 标签 === "OL") {
+      行们.push(...列表回写(元素, 0))
+      return
+    }
+    if (标签 === "TABLE") {
+      行们.push(...表格回写(元素))
+      return
+    }
+    if (标签 === "P" || 标签 === "DIV" || 标签 === "SECTION" || 标签 === "ARTICLE" || 标签 === "LI") {
+      for (const 行 of 取行们(行内回写(元素))) 行们.push(行.replace(/\s+$/, ""))
+      // 空段落（<p><br></p>）留一个空行，段间空行不会被吞掉
+      if (元素.childNodes.length === 0) 行们.push("")
+      return
+    }
+    行们.push(行内回写(元素).replace(/\s+$/, ""))
+  }
+  for (const 子 of Array.from(根.childNodes)) 收(子)
+  // 头尾的纯空行去掉；中间连续空行最多留一行
+  const 收尾: string[] = []
+  for (const 行 of 行们) {
+    if (行 === "" && (收尾.length === 0 || 收尾[收尾.length - 1] === "")) continue
+    收尾.push(行)
+  }
+  while (收尾.length > 0 && 收尾[收尾.length - 1] === "") 收尾.pop()
+  return 收尾.join(换行)
 }

@@ -135,3 +135,23 @@
 }
 .编辑器-预览 a { color: var(--主); text-decoration: underline; }
 .编辑器-预览 del { color: var(--字弱); }
+/* ── 富文本（所见即所得）编辑区：排版沿用上面的预览样式，这里只补编辑态细节 ── */
+.编辑器-富文本 {
+  outline: none;
+  caret-color: var(--主);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.编辑器-富文本:empty::before {
+  content: "在这里写正文：Markdown 记号会实时变成格式（Ctrl+S 保存）";
+  color: var(--字弱);
+}
+.编辑器-富文本 blockquote p { margin: 0; }
+/* 中文小说的节奏靠段首缩进，不靠段间空行：段落外边距归零，行距跟全局走。 */
+.编辑器-富文本 p { margin: 0; }
+/* 渲染结果里 <p> 之间是用换行拼的；pre-wrap 会把那些换行画成空行，所以这里要 normal。 */
+.编辑器-富文本 { line-height: var(--行距); font-family: var(--编辑字体); font-size: var(--编辑字号); white-space: normal; }
+.编辑器-富文本 h1, .编辑器-富文本 h2, .编辑器-富文本 h3,
+.编辑器-富文本 h4, .编辑器-富文本 h5, .编辑器-富文本 h6 { margin: 0.6em 0 0.3em; }
+.编辑器-富文本 ::selection { background: var(--主淡); }

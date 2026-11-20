@@ -73,7 +73,7 @@ export function 左栏(属性: {
         ) : null}
         {属性.页 === "文件" ? (
           属性.项目 ? (
-            <div style={{ paddingTop: 8 }}>
+            <div className="左栏分组">
               <div className="统计行" style={{ padding: "0 12px" }}>
                 <span className="胶囊">书内文件</span>
                 <button className="胶囊" onClick={() => set拉树号((旧) => 旧 + 1)}>
@@ -89,8 +89,8 @@ export function 左栏(属性: {
         ) : null}
         {属性.页 === "台账" ? <台账面板 看板={属性.看板} /> : null}
         {属性.页 === "建议" ? (
-          <div style={{ padding: "10px 12px 0" }}>
-            <div className="统计行">
+          <div className="左栏分组">
+            <div className="统计行" style={{ padding: "0 12px" }}>
               <span className="胶囊">第 {章} 章</span>
               <span className="胶囊">{本章条目.length} 条待裁定</span>
             </div>
