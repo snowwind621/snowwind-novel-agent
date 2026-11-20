@@ -2,7 +2,15 @@
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 
-const 执行 = promisify(execFile)
+const 原执行 = promisify(execFile)
+
+/**
+ * 跑一条外部命令。
+ * Windows 上不加 windowsHide，每调一次 git 就弹一个黑色 cmd 窗口；
+ * 自动保存每次都要 add + commit，于是一按保存就连爆好几个窗口。
+ */
+const 执行 = (文件: string, 参数: string[], 选项: Record<string, unknown> = {}) =>
+  原执行(文件, 参数, { windowsHide: true, ...选项 }) as Promise<{ stdout: string; stderr: string }>
 
 export async function 是Git仓库(根目录: string): Promise<boolean> {
   try {
