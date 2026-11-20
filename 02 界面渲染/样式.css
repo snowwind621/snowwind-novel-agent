@@ -819,6 +819,22 @@ body.拖宽中 { cursor: col-resize; user-select: none; }
 .台账卡摘 { color: var(--字弱); font-size: 11px; line-height: 1.6; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 
 /* 图表悬停提示 */
+/* 工具回执气泡：一行说明，待确认用警示色顶出来 */
+.工具条 {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--字弱);
+  overflow-wrap: anywhere;
+}
+.工具条 .图标 { margin-top: 2px; color: var(--主); }
+.工具条.待确认 { color: var(--警); }
+.工具条.待确认 .图标 { color: var(--警); }
+.工具条.失败 { color: var(--危); }
+.工具条.失败 .图标 { color: var(--危); }
+
 .图表提示 {
   position: absolute;
   z-index: 30;

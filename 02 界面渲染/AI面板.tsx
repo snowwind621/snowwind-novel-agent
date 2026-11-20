@@ -1,7 +1,7 @@
 // 只负责一件事：右侧对话栏——对话 / 讨论 / 计划三种模式，气泡、流式收字、用量与本轮累计。
 import React, { useEffect, useRef, useState } from "react"
 import { 桥, 时刻 } from "./接口"
-import type { 看板数据, 设置, 项目摘要, 集群成员, 对话事件, 对话条目, 用量 } from "./接口"
+import type { 看板数据, 设置, 项目摘要, 集群成员, 对话事件, 对话条目, 工具回执, 用量 } from "./接口"
 import { 组装系统提示 } from "../05 编排内核/章节提示词"
 import { 该压缩, 取要压的, 造摘要提示, 拼用户输入, 估算词元, 续摘要 } from "../06 智能体运行时/对话压缩"
 import { 计划 } from "../10 书库检索/书库布局"
@@ -33,6 +33,21 @@ function 读模式(): 模式 {
     /* 读不到就当默认的「对话」 */
   }
   return "对话"
+}
+
+/** 工具回执 → 一行话：🔧 续写（{章节号:27}）→ 完成，23 字 */
+function 工具说明(回: 工具回执): string {
+  const 对 = 回.参数 && typeof 回.参数 === "object" ? Object.entries(回.参数).slice(0, 3) : []
+  const 参数 = 对
+    .map(([键, 值]) => 键 + ":" + (typeof 值 === "string" ? "\u201c" + 值 + "\u201d" : String(值)))
+    .join(", ")
+  const 尾 =
+    回.状态 === "完成"
+      ? "完成" + (typeof 回.结果字数 === "number" ? "，" + 回.结果字数 + " 字" : "")
+      : 回.状态 === "待确认"
+        ? "等你回一句「确认」"
+        : 回.状态
+  return "🔧 " + (回.中文名 || 回.名称) + (参数 ? "（{" + 参数 + "}）" : "") + " → " + 尾 + (回.摘要 ? "：" + 回.摘要 : "")
 }
 
 function 千分(数: number): string {
@@ -96,6 +111,8 @@ export function AI面板(属性: {
   /** 讨论里每个成员一个请求号，说完就 resolve；说过的内容也存在这里，供总编收口。 */
   const 讨论等待 = useRef(new Map<string, () => void>())
   const 讨论文本 = useRef(new Map<string, string>())
+  /** 工具回执按「轮次+名称」合并成一条气泡，别一直往上堆 */
+  const 工具已见 = useRef(new Set<string>())
 
   const 分工 = 设定?.模型.分工
   const 模型们 = Array.from(new Set([分工?.总编, 分工?.执笔, 分工?.审校, 分工?.助手].filter(Boolean) as string[]))
@@ -143,6 +160,26 @@ export function AI面板(属性: {
 
   useEffect(() => {
     const 卸载 = 桥.监听对话((事件: 对话事件) => {
+      // 工具回执：开始 / 完成 / 失败 / 待确认，合并进同一条「系统」气泡
+      if (事件.类型 === "工具") {
+        let 回: 工具回执 | null = null
+        try {
+          回 = JSON.parse(事件.文本) as 工具回执
+        } catch {
+          return
+        }
+        if (!回 || !回.名称) return
+        const id = "工具-" + (回.轮次 ?? 0) + "-" + 回.名称
+        const 补丁 = { 文本: 工具说明(回), 工具: 回, 进行中: 回.状态 === "开始" }
+        if (工具已见.current.has(id)) {
+          补条(id, 补丁)
+        } else {
+          工具已见.current.add(id)
+          追加({ id, 谁: "系统", ...补丁 })
+        }
+        return
+      }
+
       // 讨论：每个成员一个请求号，各自落到自己的气泡里
       const 等 = 讨论等待.current.get(事件.请求号)
       if (等) {
@@ -579,7 +616,23 @@ export function AI面板(属性: {
                       ) : null}
                     </span>
                   </div>
-                  <div className="消息体">{条.文本}</div>
+                  {条.工具 ? (
+                    <div
+                      className={
+                        "工具条" +
+                        (条.工具.状态 === "待确认" ? " 待确认" : "") +
+                        (条.工具.状态 === "失败" ? " 失败" : "")
+                      }
+                    >
+                      <图标
+                        名={条.工具.状态 === "完成" ? "勾" : 条.工具.状态 === "开始" ? "播放" : "警告"}
+                        大小={14}
+                      />
+                      <span>{条.文本}</span>
+                    </div>
+                  ) : (
+                    <div className="消息体">{条.文本}</div>
+                  )}
                   {条.明细 ? (
                     <details className="明细">
                       <summary>各位负责人的原始回答 · {条.明细.length}</summary>
