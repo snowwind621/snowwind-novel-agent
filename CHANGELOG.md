@@ -13,6 +13,7 @@
 - 新增 `.githooks/pre-commit`：提交前自动跑一遍暂存内容检查，不合格直接拦下
   （克隆后执行一次 `git config core.hooksPath .githooks` 生效）
 - 发布 v0.1.0 Release，并补仓库描述与主题标签
+- LICENSE 保持纯 MIT 文本，示例内容例外说明移到 README（否则 GitHub 识别不出协议）
 
 ## [0.1.0] - 2026-11-20
 
