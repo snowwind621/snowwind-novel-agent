@@ -849,3 +849,105 @@ body.拖宽中 { cursor: col-resize; user-select: none; }
   box-shadow: var(--阴影);
   pointer-events: none;
 }
+
+/* ═══════════ 数据面板（中栏「数据」视图） ═══════════ */
+.数据面板 { flex: 1; min-height: 0; display: grid; grid-template-columns: 170px 1fr; }
+.数据导航 {
+  border-right: 1px solid var(--线);
+  padding: 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  background: var(--底浅);
+}
+.数据导航项 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--字弱);
+  font-size: 13px;
+  text-align: left;
+}
+.数据导航项:hover { color: var(--字); border-color: var(--线); }
+.数据导航项.选中 { background: var(--主淡); color: var(--主); font-weight: 600; }
+.数据导航脚 { margin-top: auto; padding: 10px 10px 2px; color: var(--字弱); font-size: 11.5px; }
+
+.数据体 { min-width: 0; min-height: 0; overflow-y: auto; padding: 16px 20px 40px; position: relative; }
+.数据块 { max-width: 920px; }
+.数据块头 { display: flex; justify-content: space-between; align-items: baseline; color: var(--字弱); font-size: 12px; margin-bottom: 10px; }
+.数据空 { color: var(--字弱); font-size: 13px; line-height: 1.9; padding: 28px 0; text-align: center; }
+.数据空.小 { padding: 6px 0; font-size: 11.5px; text-align: left; }
+.数据筛选 { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+.数据筛选 .分段按钮 { flex: 0 0 auto; padding: 0 10px; height: 26px; }
+
+.数据表 { width: 100%; border-collapse: collapse; font-size: 13px; }
+.数据表 th, .数据表 td { border-bottom: 1px solid var(--线淡); padding: 7px 10px; text-align: left; vertical-align: top; line-height: 1.7; }
+.数据表 th { color: var(--字弱); font-weight: 600; font-size: 12px; }
+.数据表 tr:hover td { background: var(--底浅); }
+
+.人物格 { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }
+.人物卡 { border: 1px solid var(--线淡); border-radius: 10px; padding: 10px 12px; background: var(--底浅); }
+.人物卡.久未出场 { border-color: var(--警); }
+.人物卡头 { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.人物卡名 { font-size: 13.5px; font-weight: 600; }
+.人物卡元 { color: var(--字弱); font-size: 11.5px; margin: 4px 0 8px; }
+
+.秘密格 { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+.秘密卡 { border: 1px solid var(--线淡); border-left: 3px solid var(--危); border-radius: 8px; padding: 8px 12px; background: var(--底浅); font-size: 12.5px; line-height: 1.8; }
+.秘密卡头 { font-weight: 600; margin-bottom: 4px; }
+.秘密卡行 { color: var(--字弱); }
+
+/* 手绘 SVG 原语：颜色全走变量，深浅色都成立 */
+.时间轴图 .轴 { stroke: var(--线); stroke-width: 1; }
+.时间轴图 .时间点 { fill: var(--主); }
+.时间轴图 .时间日期 { fill: var(--字弱); font-size: 11.5px; }
+.时间轴图 .时间事件 { fill: var(--字); font-size: 12.5px; }
+.时间轴图 .时间章 { fill: var(--字弱); font-size: 11px; }
+.关系图 .关系边 { stroke: var(--线强); stroke-width: 1.2; }
+.关系图 .关系边字 { fill: var(--字弱); font-size: 10.5px; }
+.关系图 .关系节点 { fill: var(--底更浅); stroke: var(--主); stroke-width: 1.4; }
+.关系图 .关系名 { fill: var(--字); font-size: 11.5px; }
+.热力图 .热力格 { fill: var(--底更浅); }
+.热力图 .热力格.有 { fill: var(--主); opacity: 0.85; }
+.热力图 .热力名 { fill: var(--字弱); font-size: 11px; }
+热力图 .轴字 { fill: var(--字弱); }
+.属性图 .属性底 { fill: var(--底更浅); }
+.属性图 .属性旧 { fill: var(--线强); }
+.属性图 .属性新 { fill: var(--主); }
+.属性图 .属性名 { fill: var(--字弱); font-size: 11px; }
+.属性图 .属性值 { fill: var(--字弱); font-size: 10.5px; }
+
+/* ═══════════ 气泡：微信式小脚 + 降饱和底色 ═══════════ */
+:root {
+  /* 比 --底更浅 更沉的中性色，避免暗色下晃眼；正文 --字 对它的对比度见汇报 */
+  --气泡底: #1c1f26;
+  --气泡你的: #232a38;
+}
+[data-主题="亮"] {
+  --气泡底: #f3f1ed;
+  --气泡你的: #e7eefb;
+}
+.消息 { align-items: flex-start; }
+.谁-你 { align-items: flex-end; }
+.气泡 { position: relative; max-width: 86%; }
+.谁-你 .气泡 { background: var(--气泡你的); }
+.谁-总编 .气泡,
+.谁-集群 .气泡,
+.谁-改写 .气泡 { background: var(--气泡底); }
+.气泡::after {
+  content: "";
+  position: absolute;
+  bottom: 10px;
+  width: 0;
+  height: 0;
+  border: 6px solid transparent;
+}
+.谁-你 .气泡::after { right: -11px; border-left-color: var(--气泡你的); border-top-color: transparent; }
+.谁-总编 .气泡::after,
+.谁-集群 .气泡::after,
+.谁-改写 .气泡::after { left: -11px; border-right-color: var(--气泡底); border-top-color: transparent; }

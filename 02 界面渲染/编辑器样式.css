@@ -68,6 +68,79 @@
 .编辑器-预览 > *:first-child { margin-top: 0; }
 .编辑器-预览 > *:last-child { margin-bottom: 0; }
 
+/* —— 标签页行：一行内换行，最多三行，超了三行整块竖滚 —— */
+.标签行 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 10px;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--线);
+  background: var(--底浅);
+  max-height: 102px;
+  overflow-y: auto;
+}
+.标签 {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 6px 0 10px;
+  max-width: 220px;
+  border: 1px solid var(--线淡);
+  border-radius: 8px;
+  background: var(--底更浅);
+  color: var(--字弱);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.标签:hover { border-color: var(--线强); color: var(--字); }
+.标签.选中 { background: var(--主淡); border-color: var(--主); color: var(--主); }
+.标签字 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.标签关 {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0 3px;
+  font-size: 13px;
+  line-height: 1;
+  border-radius: 4px;
+}
+.标签关:hover { color: var(--危); }
+.标签提示 { margin-left: auto; color: var(--字弱); font-size: 11px; }
+.标签空 { color: var(--字弱); font-size: 12px; }
+
+/* —— 正文区：不可编辑的标题块 + 富文本，整块一起滚 —— */
+.编辑器-正文区 {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 26px 40px 80px;
+  background: var(--底);
+  display: flex;
+  flex-direction: column;
+}
+.编辑器-标题块 {
+  margin: 0 0 18px;
+  font-size: 1.35em;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--字);
+  user-select: none;
+}
+/* 富文本沿用「编辑器-预览」的排版，但在正文区里自己不再滚动、不要再加内边距 */
+.编辑器-正文区 .编辑器-富文本 {
+  flex: 1;
+  min-height: 240px;
+  padding: 0;
+  overflow: visible;
+  outline: none;
+}
+.保存状态 { margin-left: auto; color: var(--字弱); font-size: 11.5px; white-space: nowrap; }
+.图标.翻转 { transform: scaleX(-1); }
+
 .编辑器-预览 p { margin: 0 0 0.35em; }
 .编辑器-预览 h1,
 .编辑器-预览 h2,

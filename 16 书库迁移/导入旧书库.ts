@@ -51,17 +51,24 @@ async function 列(目录: string): Promise<fsSync.Dirent[]> {
   }
 }
 
-async function 复制若干(source: string, target: string, 只要md = true): Promise<number> {
+async function 复制若干(source: string, target: string, 只要md = true, 跳过?: Set<string>): Promise<number> {
   let 数 = 0
   await fs.mkdir(target, { recursive: true })
   for (const 项 of await 列(source)) {
     if (项.isDirectory()) continue
     if (只要md && !项.name.endsWith(".md")) continue
+    if (跳过?.has(项.name)) continue
     await fs.copyFile(path.join(source, 项.name), path.join(target, 项.name))
     数++
   }
   return 数
 }
+
+/**
+ * 台账映射已经接管的情节文件：附录复制 情节/ 时跳过它们，改在 情节/ 留一张指针。
+ * 只跳过、不删除——旧书库里的原文件一个字没动，新书库也不重复存第二份。
+ */
+const 情节里已被台账接管 = [{ 文件: "情节-01-承诺台账.md", 台账: 台账册.承诺台账 }]
 
 const 设定映射: Record<string, string> = {
   world: "世界观",
@@ -247,7 +254,27 @@ export async function 导入旧书库(旧根: string, 新根: string): Promise<�
   for (const [旧名, 新相对] of 附录映射) {
     const 源 = path.join(旧根, "reference", 旧名)
     if (!fsSync.existsSync(源)) continue
-    统计.附录 += await 复制若干(源, path.join(新根, 新相对))
+    // 只有「情节」会和台账映射撞车（核对/留痕/考据/导航/讨论 与台账映射没有交集）
+    const 跳过 = 旧名 === "情节" ? new Set(情节里已被台账接管.map((项) => 项.文件)) : undefined
+    统计.附录 += await 复制若干(源, path.join(新根, 新相对), true, 跳过)
+    if (旧名 === "情节") {
+      for (const 接管 of 情节里已被台账接管) {
+        if (!fsSync.existsSync(path.join(源, 接管.文件))) continue
+        const 指针名 = path.basename(接管.台账, ".md") + "-指针.md"
+        await fs.writeFile(
+          path.join(新根, 新相对, 指针名),
+          [
+            "# " + path.basename(接管.台账, ".md") + "指针",
+            "",
+            "> 旧书库里的 reference/情节/" + 接管.文件 + " 就是同一份台账，导入时已由台账映射转到 " + 接管.台账 + "。",
+            "> 这里只留指针，不再重复存一份（同一事实不存两处）；原文件仍在旧书库原处，没有删除。",
+            "",
+          ].join("\n"),
+          "utf8",
+        )
+        统计.附录 += 1
+      }
+    }
   }
 
   return {

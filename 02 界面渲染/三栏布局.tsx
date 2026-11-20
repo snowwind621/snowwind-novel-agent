@@ -32,13 +32,26 @@ function 取待裁定(看板: unknown): 待裁定章[] {
   return Array.isArray(值) ? 值 : []
 }
 
+/** 中栏的一个标签页：一章正文，或书库里任意一个 md 文件。 */
+interface 页签 {
+  id: string
+  种类: "章" | "文件"
+  编号?: number
+  相对路径?: string
+  标题: string
+  正文: string
+}
+
 export function 三栏布局() {
   const [项目, set项目] = useState<项目摘要 | null>(null)
   const [看板, set看板] = useState<看板数据 | null>(null)
-  const [章节号, set章节号] = useState<number | null>(null)
-  const [正文, set正文] = useState("")
-  const [标题, set标题] = useState("")
-  const [脏, set脏] = useState(false)
+  // 中栏是标签页：每页是一章正文，或书库里任意一个 md 文件
+  const [页签们, set页签们] = useState<页签[]>([])
+  const [当前页号, set当前页号] = useState("")
+  const 当前页 = 页签们.find((页) => 页.id === 当前页号) ?? null
+  const 章节号 = 当前页 && 当前页.种类 === "章" ? 当前页.编号 ?? null : null
+  const 标题 = 当前页?.标题 ?? ""
+  const 正文 = 当前页?.正文 ?? ""
   const [状态字, set状态字] = useState("")
   const [设定, set设定] = useState<设置 | null>(null)
   const [显示设置, set显示设置] = useState(false)
@@ -215,9 +228,7 @@ export function 三栏布局() {
         const 末章 = 已开.统计.最新章节 || 首章
         if (末章) {
           const 读 = await 桥.读取章节(末章)
-          set章节号(读.编号)
-          set标题(读.标题)
-          set正文(读.正文)
+          开页签({ id: "章:" + 读.编号, 种类: "章", 编号: 读.编号, 标题: 读.标题, 正文: 读.正文 })
         }
       }
     })()
@@ -227,14 +238,13 @@ export function 三栏布局() {
     set项目(结果)
     set看板(await 桥.读取看板())
     set成员们(await 桥.集群成员())
-    set脏(false)
     set书架(await 桥.书架())
+    set页签们([])
+    set当前页号("")
     const 末章 = 结果.统计.最新章节 || 结果.卷[0]?.章节[0]?.编号 || 0
     if (末章) {
       const 读 = await 桥.读取章节(末章)
-      set章节号(读.编号)
-      set标题(读.标题)
-      set正文(读.正文)
+      开页签({ id: "章:" + 读.编号, 种类: "章", 编号: 读.编号, 标题: 读.标题, 正文: 读.正文 })
     }
   }
 
@@ -256,16 +266,51 @@ export function 三栏布局() {
     }
   }
 
-  const 选章 = async (编号: number): Promise<boolean> => {
-    if (脏 && !window.confirm("当前章节有未保存的修改，仍要切换吗？")) return false
-    const 读 = await 桥.读取章节(编号)
-    set章节号(读.编号)
-    set标题(读.标题)
-    set正文(读.正文)
-    set脏(false)
-    set状态字("")
+  const 改页 = (id: string, 补丁: Partial<页签>) =>
+    set页签们((旧) => 旧.map((页) => (页.id === id ? { ...页, ...补丁 } : 页)))
+
+  /** 打开或激活一个标签页，并切回编辑视图。 */
+  const 开页签 = (页: 页签) => {
+    set页签们((旧) =>
+      旧.some((项) => 项.id === 页.id)
+        ? 旧.map((项) => (项.id === 页.id ? { ...项, 标题: 页.标题, 正文: 页.正文 } : 项))
+        : [...旧, 页],
+    )
+    set当前页号(页.id)
     set文件(null)
     set中栏视图("编辑")
+  }
+
+  const 切页签 = async (id: string) => {
+    if (id === 当前页号) return
+    await 保存()
+    set当前页号(id)
+    set中栏视图("编辑")
+  }
+
+  /** 关标签：先存盘，再激活右边相邻的（没有就左边）。 */
+  const 关页签 = async (id: string) => {
+    if (id === 当前页号) await 保存()
+    const 序 = 页签们.findIndex((页) => 页.id === id)
+    const 剩 = 页签们.filter((页) => 页.id !== id)
+    set页签们(剩)
+    if (id !== 当前页号) return
+    const 邻 = 剩[序] ?? 剩[序 - 1]
+    set当前页号(邻?.id ?? "")
+  }
+
+  /** 打开一章：已有这个标签就激活，没有就读盘再建一个。 */
+  const 选章 = async (编号: number): Promise<boolean> => {
+    const 已有 = 页签们.find((页) => 页.id === "章:" + 编号)
+    await 保存()
+    if (已有) {
+      set当前页号(已有.id)
+      set文件(null)
+      set中栏视图("编辑")
+      return true
+    }
+    const 读 = await 桥.读取章节(编号)
+    开页签({ id: "章:" + 读.编号, 种类: "章", 编号: 读.编号, 标题: 读.标题, 正文: 读.正文 })
     return true
   }
 
@@ -274,12 +319,30 @@ export function 三栏布局() {
     for (const 卷 of 项目?.卷 ?? []) {
       const 章 = 卷.章节.find((项) => 项.文件 === 相对路径)
       if (!章) continue
-      if (!(await 选章(章.编号))) return
+      await 选章(章.编号)
+      return
+    }
+    const 已有 = 页签们.find((页) => 页.id === "文件:" + 相对路径)
+    await 保存()
+    if (已有) {
+      set当前页号(已有.id)
       set文件(null)
+      set中栏视图("编辑")
       return
     }
     try {
-      set文件(await 桥.书库读文件(相对路径))
+      const 内容 = await 桥.书库读文件(相对路径)
+      if (!内容.是文本) {
+        set文件(内容)
+        return
+      }
+      开页签({
+        id: "文件:" + 相对路径,
+        种类: "文件",
+        相对路径,
+        标题: 相对路径.split("/").pop() ?? 相对路径,
+        正文: 内容.文本,
+      })
       set状态字("")
     } catch (错误: any) {
       set状态字("打不开文件：" + String(错误?.message ?? 错误))
@@ -316,16 +379,30 @@ export function 三栏布局() {
     }
   }
 
-  const 保存 = async () => {
-    if (章节号 === null) return
-    const 结果 = await 桥.保存章节(章节号, 正文)
-    set状态字(结果.说明)
-    if (结果.成功) {
-      set脏(false)
-      set看板(await 桥.读取看板())
-      const 新项目 = await 桥.当前项目()
-      if (新项目) set项目(新项目)
-      await 同步台账(章节号)
+  /** 保存当前标签：章走章节通道，md 文件走书库写文件。返回是否成功。 */
+  const 保存 = async (): Promise<boolean> => {
+    const 页 = 页签们.find((项) => 项.id === 当前页号)
+    if (!页) return false
+    try {
+      if (页.种类 === "章" && 页.编号 !== undefined) {
+        const 结果 = await 桥.保存章节(页.编号, 页.正文)
+        set状态字(结果.说明)
+        if (!结果.成功) return false
+        set看板(await 桥.读取看板())
+        const 新项目 = await 桥.当前项目()
+        if (新项目) set项目(新项目)
+        return true
+      }
+      if (页.相对路径) {
+        const 结果 = await 桥.书库写文件(页.相对路径, 页.正文)
+        set状态字(结果.说明)
+        if (结果.成功) set看板(await 桥.读取看板())
+        return 结果.成功
+      }
+      return false
+    } catch (错误: any) {
+      set状态字("保存失败：" + String(错误?.message ?? 错误))
+      return false
     }
   }
 
@@ -527,19 +604,18 @@ export function 三栏布局() {
         ) : (
         <正文编辑
           已开书库={Boolean(项目)}
-          编号={章节号}
+          标签们={页签们.map((页) => ({ id: 页.id, 标题: 页.标题, 种类: 页.种类 }))}
+          当前标签={当前页号}
+          切标签={(id) => void 切页签(id)}
+          关标签={(id) => void 关页签(id)}
           标题={标题}
           正文={正文}
-          脏={脏}
           改={(新正文) => {
-            set正文(新正文)
-            set脏(true)
+            if (!当前页号) return
+            改页(当前页号, { 正文: 新正文 })
           }}
           保存={保存}
-          报选区={() => {
-            /* 选区暂时没有消费者：改写已改成直接跟 agent 说，等 task-20 的工具再来取 */
-          }}
-          状态字={状态字}
+          提示字={状态字}
           切总览={() => set中栏视图("全书")}
         />
         )}

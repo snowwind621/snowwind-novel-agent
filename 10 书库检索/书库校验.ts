@@ -142,9 +142,9 @@ export function 校验书库(根: string): 校验结果 {
     const 收集 = (值: unknown) => {
       if (Array.isArray(值)) for (const 项 of 值) 收集(项)
       else if (typeof 值 === "string") {
-        const 匹配 = /^uid\s*(\d+)$/i.exec(值.trim())
-        if (匹配) uid集.add(匹配[1])
-        else if (/^uid\d+$/i.test(值.trim())) uid集.add(值.trim().replace(/^uid/i, ""))
+        // 别名里可能是 "uid 22"（带引号）、"uid22"，也可能夹在别的字里，统一抓出来
+        const 干净 = 值.replace(/["'«»]/g, "").trim()
+        for (const 匹配 of 干净.matchAll(/uid\s*(\d+)/gi)) uid集.add(匹配[1])
       }
     }
     收集(规范.别名)
@@ -243,6 +243,8 @@ export function 校验书库(根: string): 校验结果 {
   // ── 同一事实两处：长行在两个以上文件里一字不差 ──────────────
   const 行到文件 = new Map<string, Set<string>>()
   for (let 序 = 0; 序 < 引用文件们.length; 序++) {
+    // 归档目录是刻意保留旧副本的，不算「同一事实存两处」
+    if (/\/(历史|归档|备份)\//.test(相对们[序])) continue
     for (const 行 of 读(引用文件们[序]).split(/\r?\n/)) {
       const 干 = 行.trim()
       if (干.length < 40 || 干.startsWith("|") || 干.startsWith("---")) continue

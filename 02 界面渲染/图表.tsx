@@ -198,3 +198,182 @@ export function 人物条(属性: { 人物们: 人物条项[]; 最新章节: num
     </svg>
   )
 }
+
+// ────────────────── 数据面板用的原语（时间轴 / 关系网 / 热力矩阵 / 属性条） ──────────────────
+
+export interface 时间点 {
+  日期: string
+  事件: string
+  章: string
+}
+
+/** 竖向时间轴：一条竖线串起日期 → 事件 → 章；章号做成小胶囊。 */
+export function 时间轴(属性: { 点们: 时间点[]; 悬停: 悬停; 离开: () => void }) {
+  const 行高 = 58
+  const 宽 = 720
+  const 高 = Math.max(属性.点们.length, 1) * 行高 + 12
+  return (
+    <svg className="时间轴图" viewBox={"0 0 " + 宽 + " " + 高} width="100%" height={高} role="img" aria-label="时间线">
+      <line className="轴" x1={96} y1={16} x2={96} y2={高 - 10} />
+      {属性.点们.map((点, 序) => {
+        const y = 20 + 序 * 行高
+        const 说明 = 点.日期 + "：" + 点.事件 + (点.章 ? "（" + 点.章 + "）" : "")
+        return (
+          <g key={序} onMouseEnter={(事件) => 属性.悬停(事件.clientX, 事件.clientY, 说明)} onMouseMove={(事件) => 属性.悬停(事件.clientX, 事件.clientY, 说明)} onMouseLeave={属性.离开}>
+            <circle className="时间点" cx={96} cy={y + 10} r={5} />
+            <text className="时间日期" x={84} y={y + 14} textAnchor="end">
+              {点.日期}
+            </text>
+            <text className="时间事件" x={116} y={y + 14}>
+              {点.事件.length > 52 ? 点.事件.slice(0, 52) + "…" : 点.事件}
+            </text>
+            {点.章 ? (
+              <text className="时间章" x={116} y={y + 34}>
+                {点.章}
+              </text>
+            ) : null}
+          </g>
+        )
+      })}
+    </svg>
+  )
+}
+
+export interface 关系边 {
+  编号: string
+  关系对: string
+  章: string
+  变化: string
+}
+
+/** 关系网：节点按名字排在圆上，边连两人，标签是关系名；悬停看这一条的变化经过。 */
+export function 关系网(属性: { 边们: 关系边[]; 悬停: 悬停; 离开: () => void }) {
+  // 人太多会糊成一团：按出现次数取前 16 个人，只画他们之间的边
+  const 度 = new Map<string, number>()
+  for (const 边 of 属性.边们) {
+    for (const 名 of 边.关系对.split(/[↔<>\-—→、/／]/).map((项) => 项.trim()).filter(Boolean)) {
+      度.set(名, (度.get(名) ?? 0) + 1)
+    }
+  }
+  const 名们 = [...度.entries()].sort((甲, 乙) => 乙[1] - 甲[1]).slice(0, 16).map(([名]) => 名)
+  const 边们 = 属性.边们.filter((边) => {
+    const 两端 = 边.关系对.split(/[↔<>\-—→、/／]/).map((项) => 项.trim()).filter(Boolean)
+    return 两端.length >= 2 && 名们.includes(两端[0]) && 名们.includes(两端[1])
+  })
+  const 宽 = 660
+  const 高 = 420
+  const 心 = { x: 宽 / 2, y: 高 / 2 }
+  const 半径 = Math.min(宽, 高) / 2 - 66
+  const 位 = (名: string) => {
+    const 序 = 名们.indexOf(名)
+    const 角 = (序 / Math.max(1, 名们.length)) * Math.PI * 2 - Math.PI / 2
+    return { x: 心.x + Math.cos(角) * 半径, y: 心.y + Math.sin(角) * 半径 }
+  }
+  if (名们.length === 0) return null
+  return (
+    <svg className="关系图" viewBox={"0 0 " + 宽 + " " + 高} width="100%" height={高} role="img" aria-label="关系网">
+      {边们.map((边, 序) => {
+        const 两端 = 边.关系对.split(/[↔<>-—→、/／]/).map((项) => 项.trim()).filter(Boolean)
+        if (两端.length < 2) return null
+        const 甲 = 位(两端[0])
+        const 乙 = 位(两端[1])
+        const 说明 = 边.编号 + " " + 边.关系对 + "（" + 边.章 + "）：" + 边.变化
+        return (
+          <g key={边.编号 + 序} onMouseEnter={(事件) => 属性.悬停(事件.clientX, 事件.clientY, 说明)} onMouseMove={(事件) => 属性.悬停(事件.clientX, 事件.clientY, 说明)} onMouseLeave={属性.离开}>
+            <line className="关系边" x1={甲.x} y1={甲.y} x2={乙.x} y2={乙.y} />
+            {边们.length <= 26 ? (
+              <text className="关系边字" x={(甲.x + 乙.x) / 2} y={(甲.y + 乙.y) / 2 - 4} textAnchor="middle">
+              {边.关系对.length > 10 ? 边.关系对.slice(0, 10) + "…" : 边.关系对}
+            </text>
+            ) : null}
+          </g>
+        )
+      })}
+      {名们.map((名) => {
+        const 点 = 位(名)
+        return (
+          <g key={名}>
+            <circle className="关系节点" cx={点.x} cy={点.y} r={22} />
+            <text className="关系名" x={点.x} y={点.y + 4} textAnchor="middle">
+              {名.length > 4 ? 名.slice(0, 4) : 名}
+            </text>
+          </g>
+        )
+      })}
+    </svg>
+  )
+}
+
+export interface 热力行 {
+  名称: string
+  章们: number[]
+}
+
+/** 出场热力矩阵：行=人物，列=章；有出场填色，空着就是好久没露面。 */
+export function 热力矩阵(属性: { 行们: 热力行[]; 总章: number }) {
+  const 左 = 92
+  const 行高 = 20
+  const 格 = 11
+  const 宽 = 左 + Math.max(属性.总章, 1) * 格 + 16
+  const 高 = Math.max(属性.行们.length, 1) * 行高 + 26
+  return (
+    <svg className="热力图" viewBox={"0 0 " + 宽 + " " + 高} width="100%" height={高} role="img" aria-label="出场热力">
+      {属性.行们.map((行, 序) => {
+        const y = 18 + 序 * 行高
+        return (
+          <g key={行.名称}>
+            <text className="热力名" x={左 - 8} y={y + 10} textAnchor="end">
+              {行.名称.length > 6 ? 行.名称.slice(0, 6) + "…" : 行.名称}
+            </text>
+            {Array.from({ length: 属性.总章 }, (_, 序2) => (
+              <rect
+                key={序2}
+                className={"热力格" + (行.章们.includes(序2 + 1) ? " 有" : "")}
+                x={左 + 序2 * 格}
+                y={y + 1}
+                width={格 - 2}
+                height={14}
+                rx={2}
+              />
+            ))}
+          </g>
+        )
+      })}
+      {[1, Math.round(属性.总章 / 2), 属性.总章].map((章) => (
+        <text key={章} className="轴字" x={左 + (章 - 1) * 格 + 4} y={高 - 4} textAnchor="middle">
+          {章}
+        </text>
+      ))}
+    </svg>
+  )
+}
+
+/** 属性条：一行一个属性，标出「旧 → 新」并画到相对刻度上。 */
+export function 属性条(属性: { 项们: Array<{ 名称: string; 旧: number | null; 新: number | null }> }) {
+  const 宽 = 420
+  const 行高 = 22
+  const 高 = Math.max(属性.项们.length, 1) * 行高 + 8
+  const 最大 = Math.max(100, ...属性.项们.flatMap((项) => [项.旧 ?? 0, 项.新 ?? 0]))
+  return (
+    <svg className="属性图" viewBox={"0 0 " + 宽 + " " + 高} width="100%" height={高} role="img">
+      {属性.项们.map((项, 序) => {
+        const y = 6 + 序 * 行高
+        const 新宽 = ((项.新 ?? 0) / 最大) * (宽 - 150)
+        const 旧宽 = ((项.旧 ?? 0) / 最大) * (宽 - 150)
+        return (
+          <g key={项.名称 + 序}>
+            <text className="属性名" x={0} y={y + 12}>
+              {项.名称.length > 6 ? 项.名称.slice(0, 6) : 项.名称}
+            </text>
+            <rect className="属性底" x={86} y={y + 4} width={宽 - 150} height={10} rx={5} />
+            {项.旧 !== null ? <rect className="属性旧" x={86} y={y + 4} width={Math.max(2, 旧宽)} height={10} rx={5} /> : null}
+            <rect className="属性新" x={86} y={y + 4} width={Math.max(2, 新宽)} height={10} rx={5} />
+            <text className="属性值" x={宽 - 58} y={y + 13}>
+              {(项.旧 ?? "—") + " → " + (项.新 ?? "—")}
+            </text>
+          </g>
+        )
+      })}
+    </svg>
+  )
+}

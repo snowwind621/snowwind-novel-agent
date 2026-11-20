@@ -137,6 +137,8 @@ export interface 桥接口 {
   书库文件树: () => Promise<文件树结果>
   书库读文件: (相对路径: string) => Promise<文件内容>
   书库写文件: (相对路径: string, 内容: string) => Promise<{ 成功: boolean; 说明: string }>
+  书库Git状态: () => Promise<{ 有项目: boolean; 是Git仓库: boolean }>
+  初始化书库Git: () => Promise<{ 成功: boolean; 说明: string }>
   书架: () => Promise<书架项[]>
   移出书架: (路径: string) => Promise<书架项[]>
   模型清单: () => Promise<string[] | { 错误: string }>

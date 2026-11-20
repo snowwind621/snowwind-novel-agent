@@ -1,25 +1,16 @@
-// 只负责一件事：显示并编辑一章正文，给出富文本 / 源码 / 分屏 / 预览四种视图与插入语法的工具栏。
+// 只负责一件事：中栏编辑器——标签页、不可编辑的标题块、富文本正文、自动保存、撤回重做。
 import React, { useEffect, useRef, useState } from "react"
-import { 计字数 } from "./接口"
 import { 渲染Markdown, 取回Markdown } from "./编辑器渲染"
 import "./编辑器样式.css"
+import { 桥 } from "./接口"
 import { 视图切换 } from "./视觉总览"
 import { 图标 } from "./图标"
 import type { 图标名 } from "./图标"
 
-type 视图模式 = "富文本" | "源码" | "分屏" | "预览"
-const 模式键 = "编辑模式"
-const 模式们: 视图模式[] = ["富文本", "源码", "分屏", "预览"]
-const 模式图标: Record<视图模式, 图标名> = { 富文本: "笔", 源码: "代码", 分屏: "分栏", 预览: "眼睛" }
-
-function 读模式(): 视图模式 {
-  try {
-    const 存 = localStorage.getItem(模式键)
-    if (存 === "富文本" || 存 === "源码" || 存 === "分屏" || 存 === "预览") return 存
-  } catch {
-    /* 读不到本地记忆就用富文本 */
-  }
-  return "富文本"
+export interface 编辑器标签 {
+  id: string
+  标题: string
+  种类: "章" | "文件"
 }
 
 interface 改后 {
@@ -38,10 +29,7 @@ function 包裹(正文: string, 起: number, 止: number, 左: string, 右: stri
   }
 }
 
-/**
- * 行级前缀：处理选区覆盖到的整行。
- * 每行都已经带这个前缀时，再点一次就是整段取消（标题/引用/列表都能来回切换）。
- */
+/** 行级前缀：每行都带这个前缀时再点一次就是整段取消。 */
 function 行前缀(正文: string, 起: number, 止: number, 造前缀: (序: number) => string, 已有: RegExp): 改后 {
   const 行首 = 正文.lastIndexOf("\n", Math.max(0, 起 - 1)) + 1
   const 换行位 = 正文.indexOf("\n", 止)
@@ -78,121 +66,224 @@ const 工具按钮们: Array<{ 名: string; 说明: string; 图标: 图标名; �
   { 名: "分割线", 说明: "分割线：---", 图标: "分割线", 做: 插分割线 },
 ]
 
+/** 撤销栈：按标签各存一份，只存「已提交的改动」。 */
+const 栈深 = 100
+const 提交延迟 = 1200
+
+function 现在是(): string {
+  const 日 = new Date()
+  return String(日.getHours()).padStart(2, "0") + ":" + String(日.getMinutes()).padStart(2, "0")
+}
+
 export function 正文编辑(属性: {
   已开书库: boolean
-  编号: number | null
+  标签们: 编辑器标签[]
+  当前标签: string
+  切标签: (id: string) => void
+  关标签: (id: string) => void
   标题: string
   正文: string
-  脏: boolean
   改: (正文: string) => void
-  保存: () => void
-  报选区: (起: number, 止: number) => void
-  状态字: string
-  /** 切到中栏的「全书视图」；不传就不显示这两个视图按钮 */
+  保存: () => Promise<boolean>
+  提示字?: string
   切总览?: () => void
 }) {
-  const { 已开书库, 编号, 标题, 正文, 脏, 改, 保存, 报选区, 状态字 } = 属性
-  const [模式, set模式] = useState<视图模式>(读模式)
-  const 框 = useRef<HTMLTextAreaElement | null>(null)
+  const { 已开书库, 标签们, 当前标签, 切标签, 关标签, 标题, 正文, 改, 保存, 提示字 } = 属性
   const 富 = useRef<HTMLDivElement | null>(null)
-  const 预览 = useRef<HTMLDivElement | null>(null)
-  const 待选 = useRef<{ 起: number; 止: number } | null>(null)
   const 合成中 = useRef(false)
-  const 计时 = useRef<number | null>(null)
   const 上次渲染 = useRef("")
-  const 上次编号 = useRef<number | null>(null)
+  const 上次标签 = useRef("")
+  const 提交计时 = useRef<number | null>(null)
+  const 历史表 = useRef(new Map<string, { 栈: string[]; 位: number }>())
+  const [保存状态, set保存状态] = useState("")
+  const [可撤回, set可撤回] = useState(false)
+  const [可重做, set可重做] = useState(false)
+  /** 书库还没进 Git 时，改动没法回滚——在工具行右端提醒并提供一键初始化 */
+  const [git状态, setGit状态] = useState<{ 有项目: boolean; 是Git仓库: boolean } | null>(null)
+  const [初始化中, set初始化中] = useState(false)
+  /** 防抖定时器里拿到的是旧闭包，所以「当前正文 / 保存函数」走 ref，永远读最新值 */
+  const 最新正文 = useRef(正文)
+  const 最新保存 = useRef(保存)
 
   useEffect(() => {
-    try {
-      localStorage.setItem(模式键, 模式)
-    } catch {
-      /* 存不下就算了，不影响写作 */
-    }
-  }, [模式])
+    最新正文.current = 正文
+  }, [正文])
 
-  // 进入富文本 / 换章 / 外部改了正文（续写插入、采纳改写）时，才把 Markdown 灌进 contenteditable。
-  // 用户自己敲出来的内容不回灌，否则光标会跳、输入法会被打断。
   useEffect(() => {
-    if (模式 !== "富文本") return
-    const 元素 = 富.current
-    if (!元素) return
-    if (合成中.current) return
-    if (计时.current !== null) {
-      window.clearTimeout(计时.current)
-      计时.current = null
-    }
-    const 换章 = 上次编号.current !== 编号
-    上次编号.current = 编号
-    if (!换章 && 上次渲染.current === 正文 && 元素.innerHTML !== "") return
-    上次渲染.current = 正文
-    元素.innerHTML = 渲染Markdown(正文, { 缩进当文字: true }) || "<p><br></p>"
-  }, [模式, 正文, 编号])
-
-  // 工具栏改完文本要把光标/选区放回去，否则光标会跳到末尾。
-  useEffect(() => {
-    const 值 = 待选.current
-    const 元素 = 框.current
-    if (!值 || !元素) return
-    待选.current = null
-    元素.focus()
-    元素.setSelectionRange(值.起, 值.止)
-    报选区(值.起, 值.止)
-  }, [正文, 模式])
-
-  // 四种视图都要能 Ctrl+S：预览和富文本里都没有输入框，挂在 window 上最省事。
-  useEffect(() => {
-    const 按键 = (事件: KeyboardEvent) => {
-      if ((事件.ctrlKey || 事件.metaKey) && 事件.key.toLowerCase() === "s") {
-        事件.preventDefault()
-        保存()
-      }
-    }
-    window.addEventListener("keydown", 按键)
-    return () => window.removeEventListener("keydown", 按键)
+    最新保存.current = 保存
   }, [保存])
 
-  if (编号 === null) {
-    return (
-      <div className="中栏">
-        <div className="空态">
-          {已开书库 ? "已完成装载。" : "还没有打开书库。"}
-          <br />
-          {已开书库 ? "在左边点一章开始写。" : "点右上角「打开书库」，选一本「雪风卷宗」的根目录（含 书卷.yaml 的那层）。"}
-        </div>
-      </div>
-    )
+  const 当前历史 = () => {
+    let 记 = 历史表.current.get(当前标签)
+    if (!记) {
+      记 = { 栈: [正文], 位: 0 }
+      历史表.current.set(当前标签, 记)
+    }
+    return 记
   }
 
-  const 插入 = (做: (文: string, 起: number, 止: number) => 改后) => {
-    const 元素 = 框.current
-    const 起 = 元素?.selectionStart ?? 正文.length
-    const 止 = 元素?.selectionEnd ?? 正文.length
-    const 结果 = 做(正文, 起, 止)
-    待选.current = { 起: 结果.起, 止: 结果.止 }
-    改(结果.文)
+  const 刷新按钮 = () => {
+    const 记 = 当前历史()
+    set可撤回(记.位 > 0)
+    set可重做(记.位 < 记.栈.length - 1)
   }
 
-  /** 富文本 → 源码：DOM 只做显示，落盘的永远是 Markdown 纯文本。 */
-  const 同步到源码 = () => {
+  useEffect(() => {
+    刷新按钮()
+  }, [当前标签, 正文])
+
+  useEffect(() => {
+    void 桥
+      .书库Git状态()
+      .then((状态) => setGit状态(状态))
+      .catch(() => setGit状态(null))
+  }, [已开书库])
+
+  const 初始化Git = async () => {
+    set初始化中(true)
+    try {
+      await 桥.初始化书库Git()
+      setGit状态(await 桥.书库Git状态())
+    } catch {
+      /* 初始化失败就维持原样，下一次进来再看 */
+    } finally {
+      set初始化中(false)
+    }
+  }
+
+  // 换标签 / 外部改了正文（撤销、重做、续写插入）时把 Markdown 灌进 contenteditable。
+  useEffect(() => {
+    const 元素 = 富.current
+    if (!元素 || 合成中.current) return
+    const 换了标签 = 上次标签.current !== 当前标签
+    上次标签.current = 当前标签
+    // 只有换标签才取消待提交的定时器；普通打字时那一次提交必须留着，否则永远存不上
+    if (换了标签 && 提交计时.current !== null) {
+      window.clearTimeout(提交计时.current)
+      提交计时.current = null
+    }
+    // 撤销栈的底就是「这次进标签时读到的正文」：换标签就重开一份，避免拿改过的文本当底
+    if (换了标签 || !历史表.current.has(当前标签)) {
+      历史表.current.set(当前标签, { 栈: [正文], 位: 0 })
+      刷新按钮()
+    }
+    if (!换了标签 && 上次渲染.current === 正文 && 元素.innerHTML !== "") return
+    上次渲染.current = 正文
+    元素.innerHTML = 渲染Markdown(正文, { 缩进当文字: true }) || "<p><br></p>"
+  }, [正文, 当前标签])
+
+  /** 立刻提交一次：压撤销栈 + 存盘。防抖到点、切标签、Ctrl+S 都走它。 */
+  const 提交 = async (): Promise<boolean> => {
+    if (提交计时.current !== null) {
+      window.clearTimeout(提交计时.current)
+      提交计时.current = null
+    }
+    if (!当前标签) return false
+    const 文 = 最新正文.current
+    const 记 = 当前历史()
+    if (记.栈[记.位] !== 文) {
+      记.栈 = [...记.栈.slice(0, 记.位 + 1), 文].slice(-栈深)
+      记.位 = 记.栈.length - 1
+      刷新按钮()
+    }
+    set保存状态("保存中…")
+    const 成 = await 最新保存.current()
+    set保存状态(成 ? "已保存 " + 现在是() : "保存失败")
+    return 成
+  }
+
+  const 排提交 = () => {
+    if (提交计时.current !== null) window.clearTimeout(提交计时.current)
+    提交计时.current = window.setTimeout(() => {
+      提交计时.current = null
+      void 提交()
+    }, 提交延迟)
+  }
+
+  /** 富文本 → Markdown：DOM 只做显示，落盘的永远是纯文本。 */
+  const 同步 = () => {
     const 元素 = 富.current
     if (!元素 || 合成中.current) return
     const 换行 = 正文.includes("\r\n") ? "\r\n" : "\n"
     const 新文 = 取回Markdown(元素, 换行)
-    if (新文 === 正文) return
+    if (新文 === 最新正文.current) return
     上次渲染.current = 新文
+    最新正文.current = 新文
     改(新文)
   }
 
-  const 富输入 = () => {
-    if (合成中.current) return
-    // 回车分会插一个新段：趁 input 这一刻把上一段的缩进抄过来（放 keydown 里会因为默认动作还没做完而落空）
-    补首行缩进()
-    if (计时.current !== null) window.clearTimeout(计时.current)
-    计时.current = window.setTimeout(() => {
-      计时.current = null
-      同步到源码()
-    }, 150)
+  const 光标偏移 = (): number => {
+    const 根 = 富.current
+    const 选 = window.getSelection()
+    if (!根 || !选 || 选.rangeCount === 0 || !选.anchorNode || !根.contains(选.anchorNode)) return -1
+    const 范围 = document.createRange()
+    范围.selectNodeContents(根)
+    范围.setEnd(选.anchorNode, 选.anchorOffset)
+    return 范围.toString().length
   }
+
+  const 放光标 = (偏移: number) => {
+    const 根 = 富.current
+    if (!根 || 偏移 < 0) return
+    const 走 = document.createTreeWalker(根, NodeFilter.SHOW_TEXT)
+    let 剩 = 偏移
+    let 节点 = 走.nextNode() as Text | null
+    while (节点) {
+      const 长 = 节点.textContent?.length ?? 0
+      if (剩 <= 长) {
+        const 范围 = document.createRange()
+        范围.setStart(节点, 剩)
+        范围.collapse(true)
+        const 选 = window.getSelection()
+        选?.removeAllRanges()
+        选?.addRange(范围)
+        根.focus()
+        return
+      }
+      剩 -= 长
+      节点 = 走.nextNode() as Text | null
+    }
+    根.focus()
+  }
+
+  const 跳到 = async (新位: number) => {
+    const 记 = 当前历史()
+    if (新位 < 0 || 新位 > 记.栈.length - 1 || 新位 === 记.位) return
+    const 偏移 = 光标偏移()
+    记.位 = 新位
+    const 文 = 记.栈[记.位]
+    上次渲染.current = ""
+    最新正文.current = 文
+    改(文)
+    window.setTimeout(() => 放光标(偏移 >= 0 ? 偏移 : 文.length), 0)
+    刷新按钮()
+    set保存状态("保存中…")
+    const 成 = await 最新保存.current()
+    set保存状态(成 ? "已保存 " + 现在是() : "保存失败")
+  }
+
+  const 撤回 = () => void 跳到(当前历史().位 - 1)
+  const 重做 = () => void 跳到(当前历史().位 + 1)
+
+  useEffect(() => {
+    const 按键 = (事件: KeyboardEvent) => {
+      if (!(事件.ctrlKey || 事件.metaKey)) return
+      const 键 = 事件.key.toLowerCase()
+      if (键 === "s") {
+        事件.preventDefault()
+        void 提交()
+      } else if (键 === "z") {
+        事件.preventDefault()
+        if (事件.shiftKey) 重做()
+        else 撤回()
+      } else if (键 === "y") {
+        事件.preventDefault()
+        重做()
+      }
+    }
+    window.addEventListener("keydown", 按键)
+    return () => window.removeEventListener("keydown", 按键)
+  }, [正文, 当前标签, 保存状态])
 
   /** 回车后浏览器会插一个空段：把上一段的缩进抄过来，中文小说才不用每次手打空格。 */
   const 补首行缩进 = () => {
@@ -216,6 +307,13 @@ export function 正文编辑(属性: {
     选.addRange(范围)
   }
 
+  const 输入 = () => {
+    if (合成中.current) return
+    补首行缩进()
+    同步()
+    排提交()
+  }
+
   /** 取光标所在的最外层块（p / h2 / ul / blockquote…）。 */
   const 当前块 = (): HTMLElement | null => {
     const 根 = 富.current
@@ -227,7 +325,6 @@ export function 正文编辑(属性: {
     return (节点 as HTMLElement | null) ?? null
   }
 
-  /** 行内记号：把选区换成「语法包起来再渲染」的节点。没选中就插一对记号，光标停中间。 */
   const 富行内 = (左: string, 右: string) => {
     const 选 = window.getSelection()
     if (!选 || 选.rangeCount === 0) return
@@ -242,7 +339,8 @@ export function 正文编辑(属性: {
       选.removeAllRanges()
       选.addRange(新)
       富.current?.focus()
-      同步到源码()
+      同步()
+      排提交()
       return
     }
     const 模板 = document.createElement("div")
@@ -255,7 +353,8 @@ export function 正文编辑(属性: {
     范围.insertNode(片段)
     选.collapseToEnd()
     富.current?.focus()
-    同步到源码()
+    同步()
+    排提交()
   }
 
   const 换块 = (造: (旧块: HTMLElement) => HTMLElement | null) => {
@@ -266,7 +365,8 @@ export function 正文编辑(属性: {
     if (!新块) return
     块.replaceWith(新块)
     根.focus()
-    同步到源码()
+    同步()
+    排提交()
   }
 
   const 富标题 = () =>
@@ -278,14 +378,16 @@ export function 正文编辑(属性: {
 
   const 富引用 = () =>
     换块((块) => {
-      const 内 = document.createElement("P")
+      const 内 = document.createElement(块.tagName === "BLOCKQUOTE" ? "P" : "BLOCKQUOTE")
       if (块.tagName === "BLOCKQUOTE") {
         内.innerHTML = 块.innerHTML
         return 内
       }
       内.innerHTML = 块.innerHTML
       const 包 = document.createElement("BLOCKQUOTE")
-      包.appendChild(内)
+      const 里 = document.createElement("P")
+      里.innerHTML = 块.innerHTML
+      包.appendChild(里)
       return 包
     })
 
@@ -321,7 +423,8 @@ export function 正文编辑(属性: {
     选?.removeAllRanges()
     选?.addRange(范围)
     根.focus()
-    同步到源码()
+    同步()
+    排提交()
   }
 
   const 富做 = (名: string) => {
@@ -335,82 +438,95 @@ export function 正文编辑(属性: {
     if (名 === "分割线") return 富分割线()
   }
 
-  const 切模式 = (新: 视图模式) => {
-    if (模式 === "富文本" && 新 !== "富文本") 同步到源码()
-    set模式(新)
+  if (标签们.length === 0) {
+    return (
+      <div className="中栏">
+        <div className="标签行">
+          <span className="标签空">从左边选一个文件</span>
+        </div>
+        <div className="编辑器-工具行">
+          {属性.切总览 ? (
+            <>
+              <视图切换 当前="编辑" 切={(视图) => { if (视图 === "全书") 属性.切总览?.() }} />
+              <span className="编辑器-分隔" />
+            </>
+          ) : null}
+          <span className="编辑器-提示">{已开书库 ? "左侧点一章或一个 md 文件就会在这里打开。" : "还没有打开书库。"}</span>
+        </div>
+        <div className="空态">
+          {已开书库 ? "从左边选一个文件" : "点右上角「打开书库」，选一本「雪风卷宗」的根目录（含 书卷.yaml 的那层）。"}
+        </div>
+      </div>
+    )
   }
-
-  /** 分屏同步滚动：按百分比对齐就够，不做行到行映射。 */
-  const 同步滚动 = () => {
-    const 源 = 框.current
-    const 果 = 预览.current
-    if (!源 || !果) return
-    const 源可滚 = 源.scrollHeight - 源.clientHeight
-    const 比例 = 源可滚 > 0 ? 源.scrollTop / 源可滚 : 0
-    果.scrollTop = 比例 * Math.max(0, 果.scrollHeight - 果.clientHeight)
-  }
-
-  const 报选 = (元素: HTMLTextAreaElement) => 报选区(元素.selectionStart ?? 0, 元素.selectionEnd ?? 0)
-  const 预览HTML = 渲染Markdown(正文)
 
   return (
     <div className="中栏">
-      <div className="编辑器头">
-        <strong>{"ch" + 编号 + "　" + 标题}</strong>
-        <span>{计字数(正文)} 字</span>
-        <div className="右">
-          <span>{脏 ? "● 未保存" : "已保存"}</span>
-          <button onClick={保存} disabled={!脏} title="保存并提交（Ctrl+S）">
-            <图标 名="保存" />
-            保存并提交
-          </button>
-          <span>{状态字}</span>
-        </div>
+      <div className="标签行">
+        {标签们.map((标签) => (
+          <div
+            key={标签.id}
+            className={"标签" + (标签.id === 当前标签 ? " 选中" : "")}
+            onClick={() => 切标签(标签.id)}
+            title={标签.标题}
+          >
+            <span className="标签字">{标签.标题}</span>
+            <button
+              className="标签关"
+              title="关闭这个标签"
+              onClick={(事件) => {
+                事件.stopPropagation()
+                关标签(标签.id)
+              }}
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        {提示字 ? <span className="标签提示">{提示字}</span> : null}
       </div>
 
       <div className="编辑器-工具行">
         {属性.切总览 ? (
           <>
-            <视图切换 当前="编辑" 切={(视图) => {
-              if (视图 === "全书") 属性.切总览?.()
-            }} />
+            <视图切换 当前="编辑" 切={(视图) => { if (视图 === "全书") 属性.切总览?.() }} />
             <span className="编辑器-分隔" />
           </>
         ) : null}
-        <div className="编辑器-模式">
-          {模式们.map((一个) => (
+        <button className="编辑器-工具按钮 纯图标" onClick={撤回} disabled={!可撤回} title="撤回（Ctrl+Z）" aria-label="撤回">
+          <图标 名="刷新" 大小={15} 类名="图标 翻转" />
+        </button>
+        <button className="编辑器-工具按钮 纯图标" onClick={重做} disabled={!可重做} title="重做（Ctrl+Shift+Z）" aria-label="重做">
+          <图标 名="刷新" 大小={15} />
+        </button>
+        <span className="编辑器-分隔" />
+        <div className="编辑器-工具栏">
+          {工具按钮们.map((钮) => (
             <button
-              key={一个}
-              className={"编辑器-模式按钮" + (模式 === 一个 ? " 选中" : "")}
-              title={"切到" + 一个 + "视图"}
-              onClick={() => 切模式(一个)}
+              key={钮.名}
+              className="编辑器-工具按钮 纯图标"
+              title={钮.说明}
+              aria-label={钮.名}
+              onMouseDown={(事件) => 事件.preventDefault()}
+              onClick={() => 富做(钮.名)}
             >
-              <图标 名={模式图标[一个]} 大小={15} />
-              {一个}
+              <图标 名={钮.图标} 大小={15} />
             </button>
           ))}
         </div>
-        <span className="编辑器-分隔" />
-        {模式 === "预览" ? (
-          <span className="编辑器-提示">预览只读；要改正文切回富文本或源码，Ctrl+S 照样能保存。</span>
-        ) : (
-          <div className="编辑器-工具栏">
-            {工具按钮们.map((钮) => (
-              <button
-                key={钮.名}
-                className="编辑器-工具按钮 纯图标"
-                title={钮.说明}
-                aria-label={钮.名}
-                onClick={() => (模式 === "富文本" ? 富做(钮.名) : 插入(钮.做))}
-              >
-                <图标 名={钮.图标} 大小={15} />
-              </button>
-            ))}
-          </div>
-        )}
+        {git状态 && !git状态.是Git仓库 ? (
+          <>
+            <span className="微信息">这本书还不是 Git 仓库，改动无法回滚</span>
+            <button className="小按钮" onClick={() => void 初始化Git()} disabled={初始化中} title="在这本书里建一个 Git 仓库，之后每次写入都会自动提交">
+              {初始化中 ? "初始化中…" : "初始化"}
+            </button>
+          </>
+        ) : null}
+        <span className="保存状态" title="每改一次自动保存">{保存状态}</span>
       </div>
 
-      {模式 === "富文本" ? (
+      <div className="编辑器-正文区">
+        <h1 className="编辑器-标题块">{标题}</h1>
         <div
           ref={富}
           className="编辑器-预览 编辑器-富文本"
@@ -420,51 +536,22 @@ export function 正文编辑(属性: {
           role="textbox"
           aria-multiline="true"
           aria-label="正文（富文本）"
-          onInput={富输入}
-          onBlur={同步到源码}
+          onInput={输入}
+          onBlur={() => { 同步(); void 提交() }}
           onCompositionStart={() => {
             合成中.current = true
-            if (计时.current !== null) {
-              window.clearTimeout(计时.current)
-              计时.current = null
+            if (提交计时.current !== null) {
+              window.clearTimeout(提交计时.current)
+              提交计时.current = null
             }
           }}
           onCompositionEnd={() => {
             合成中.current = false
-            同步到源码()
+            同步()
+            排提交()
           }}
         />
-      ) : null}
-
-      {模式 === "源码" ? (
-        <textarea
-          ref={框}
-          className="正文"
-          value={正文}
-          spellCheck={false}
-          onChange={(事件) => 改(事件.target.value)}
-          onSelect={(事件) => 报选(事件.currentTarget)}
-        />
-      ) : null}
-
-      {模式 === "分屏" ? (
-        <div className="编辑器-分屏">
-          <textarea
-            ref={框}
-            className="正文 编辑器-源码"
-            value={正文}
-            spellCheck={false}
-            onChange={(事件) => 改(事件.target.value)}
-            onScroll={同步滚动}
-            onSelect={(事件) => 报选(事件.currentTarget)}
-          />
-          <div className="编辑器-预览" ref={预览} dangerouslySetInnerHTML={{ __html: 预览HTML }} />
-        </div>
-      ) : null}
-
-      {模式 === "预览" ? (
-        <div className="编辑器-预览 编辑器-预览-整页" ref={预览} dangerouslySetInnerHTML={{ __html: 预览HTML }} />
-      ) : null}
+      </div>
     </div>
   )
 }
