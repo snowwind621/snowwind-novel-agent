@@ -1,6 +1,7 @@
 // 只负责一件事：给某个智能体装配这一次任务要看的材料。
 import path from "node:path"
-import { 读文本 } from "../11 文件工作区/原子写"
+import fs from "node:fs"
+import { 读文本, 列目录 } from "../11 文件工作区/原子写"
 import type { 集群成员 } from "./成员目录"
 import { 查相关 } from "./会话簿"
 
@@ -12,13 +13,39 @@ export interface 装配参数 {
   关键词: string[]
 }
 
+/** 管辖项既可以是文件，也可以是一整个设定目录（取其中前三个）。 */
+async function 读管辖(根目录: string, 相对: string): Promise<string> {
+  const 绝对 = path.join(根目录, 相对)
+  let 是目录 = false
+  try {
+    是目录 = fs.statSync(绝对).isDirectory()
+  } catch {
+    return ""
+  }
+
+  if (!是目录) {
+    const 正文 = await 读文本(绝对).catch(() => "")
+    return 正文 ? "【" + 相对 + "】\n" + 去头(正文).slice(0, 1600) : ""
+  }
+
+  const 文件们 = (await 列目录(绝对).catch(() => [])).filter((项) => !项.是目录 && 项.名称.endsWith(".md")).slice(0, 3)
+  const 段: string[] = []
+  for (const 项 of 文件们) {
+    const 正文 = await 读文本(path.join(绝对, 项.名称)).catch(() => "")
+    if (正文) 段.push("【" + 相对 + "/" + 项.名称 + "】\n" + 去头(正文).slice(0, 700))
+  }
+  return 段.join("\n\n")
+}
+
+function 去头(正文: string): string {
+  return 正文.replace(/^---[\s\S]*?---/, "").trim()
+}
+
 export async function 装配上下文(参数: 装配参数): Promise<{ 系统: string; 用户: string }> {
   const 档案段: string[] = []
   for (const 相对 of 参数.成员.管辖.slice(0, 3)) {
-    const 正文 = await 读文本(path.join(参数.根目录, 相对)).catch(() => "")
-    if (!正文) continue
-    const 去头 = 正文.replace(/^---[\s\S]*?---/, "").trim()
-    档案段.push("【" + 相对 + "】\n" + 去头.slice(0, 1800))
+    const 段 = await 读管辖(参数.根目录, 相对)
+    if (段) 档案段.push(段)
   }
 
   const 相关 = 查相关(参数.数据目录, 参数.根目录, 参数.关键词, 5)

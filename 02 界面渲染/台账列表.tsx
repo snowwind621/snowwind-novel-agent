@@ -5,7 +5,7 @@ import type { 看板数据 } from "./接口"
 export function 台账列表(属性: { 看板: 看板数据 | null }) {
   const 看板 = 属性.看板
   if (!看板) return <div className="空态">尚未读取台账</div>
-  if (看板.台账.length === 0) return <div className="空态">这个书库里没有 reference/台账/ 目录</div>
+  if (看板.台账.length === 0) return <div className="空态">这个书库里还没有「台账」目录</div>
 
   return (
     <div>

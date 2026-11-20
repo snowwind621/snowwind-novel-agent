@@ -116,7 +116,7 @@ export function 集群面板(属性: {
             <input className="搜索框" placeholder="职责一句话，会成为它的人格" value={职} onChange={(e) => set职(e.target.value)} />
             <input
               className="搜索框"
-              placeholder="管辖文件，逗号分隔，例如：reference/台账/设定-01-时间线.md"
+              placeholder="管辖，逗号分隔，例如：台账/时间线.md 或 设定/人物"
               value={辖}
               onChange={(e) => set辖(e.target.value)}
             />

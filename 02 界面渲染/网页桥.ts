@@ -64,6 +64,7 @@ export function 创建网页桥(): 桥接口 {
       return Promise.resolve({ 已接收: true })
     },
     导出: (格式: string) => 调用("导出/执行", 格式),
+    导入旧书库: (旧根: string, 新根: string) => 调用("书库/导入", 旧根, 新根),
     监听派活: (回调: (事件: 派活进度) => void) => {
       派活监听者.add(回调)
       return () => 派活监听者.delete(回调)

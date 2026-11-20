@@ -105,7 +105,7 @@ export function 三栏布局() {
 
   const 打开书库 = async () => {
     const 是外壳 = Boolean((window as any).桥)
-    const 路径 = 是外壳 ? "" : window.prompt("输入书库根目录（含 project.yaml 的那一层）", 项目?.路径 ?? "") ?? ""
+    const 路径 = 是外壳 ? "" : window.prompt("输入书库根目录（含 书卷.yaml 的那一层）", 项目?.路径 ?? "") ?? ""
     if (!是外壳 && !路径.trim()) return
     const 结果 = await 桥.打开项目(路径)
     if (!结果) return

@@ -11,6 +11,8 @@ import { 记事件 } from "../13 共享黑板/事件日志"
 import { 拉模型清单, 流式对话 } from "../04 模型接入/网关客户端"
 import { 组装系统提示 } from "../05 编排内核/章节提示词"
 import { 同步章节台账 } from "../09 台账同步/同步台账"
+import { 路径, 派活归档 } from "../10 书库检索/书库布局"
+import { 导入旧书库 } from "../16 书库迁移/导入旧书库"
 import { 生成集群, 读集群, 存集群 } from "../06 智能体运行时/成员目录"
 import type { 集群成员 } from "../06 智能体运行时/成员目录"
 import { 派活, 选阵容 } from "../05 编排内核/集群调度"
@@ -61,7 +63,7 @@ export function 创建请求处理(
       if (状态.项目) return 状态.项目
       const 记住的路径 = 读设置(数据目录).项目路径
       if (!记住的路径) return null
-      if (!(await 存在(path.join(记住的路径, "project.yaml")))) return null
+      if (!(await 存在(path.join(记住的路径, 路径.清单)))) return null
       return 装载(记住的路径)
     },
 
@@ -70,7 +72,7 @@ export function 创建请求处理(
       for (const 卷 of 状态.项目.卷) {
         const 章 = 卷.章节.find((x) => x.编号 === 编号)
         if (!章) continue
-        return { 编号, 标题: 章.标题, 正文: await 读文本(path.join(状态.项目.路径, "manuscripts.binder", 章.文件)) }
+        return { 编号, 标题: 章.标题, 正文: await 读文本(path.join(状态.项目.路径, 章.文件)) }
       }
       throw new Error("没有第 " + 编号 + " 章")
     },
@@ -80,7 +82,7 @@ export function 创建请求处理(
       for (const 卷 of 状态.项目.卷) {
         const 章 = 卷.章节.find((x) => x.编号 === 编号)
         if (!章) continue
-        const 相对 = "manuscripts.binder/" + 章.文件
+        const 相对 = 章.文件
         await 原子写文本(path.join(状态.项目.路径, 相对), 正文)
         章.字数 = 正文.replace(/\s/g, "").length
         const 提交结果 = await 提交(状态.项目.路径, "同步 ch" + 编号 + "《" + 章.标题 + "》", [相对])
@@ -111,7 +113,7 @@ export function 创建请求处理(
       for (const 卷 of 状态.项目.卷) {
         const 章 = 卷.章节.find((x) => x.编号 === 章节号)
         if (!章) continue
-        const 正文 = await 读文本(path.join(状态.项目.路径, "manuscripts.binder", 章.文件))
+        const 正文 = await 读文本(path.join(状态.项目.路径, 章.文件))
         const 结果 = await 同步章节台账({
           根目录: 状态.项目.路径,
           数据目录,
@@ -176,13 +178,23 @@ export function 创建请求处理(
       return 全部
     },
 
+    [通道.书库导入]: async (旧根传入: string, 新根传入: string) => {
+      let 旧根 = (旧根传入 ?? "").trim()
+      let 新根 = (新根传入 ?? "").trim()
+      if (!旧根) 旧根 = (await 选目录?.()) ?? ""
+      if (!旧根) return { 成功: false, 说明: "没有选择旧书库目录" }
+      if (!新根) 新根 = (await 选目录?.()) ?? ""
+      if (!新根) return { 成功: false, 说明: "没有选择新书库目录" }
+      return 导入旧书库(旧根, 新根)
+    },
+
     [通道.导出]: async (格式: string) => {
       if (!状态.项目) return { 成功: false, 说明: "尚未打开书库", 路径: "" }
       const 章们: Array<{ 编号: number; 标题: string; 正文: string }> = []
       for (const 卷 of 状态.项目.卷) {
         for (const 章 of 卷.章节) {
           if (!章.文件) continue
-          const 正文 = await 读文本(path.join(状态.项目.路径, "manuscripts.binder", 章.文件)).catch(() => "")
+          const 正文 = await 读文本(path.join(状态.项目.路径, 章.文件)).catch(() => "")
           章们.push({ 编号: 章.编号, 标题: 章.标题, 正文 })
         }
       }
@@ -295,7 +307,7 @@ export function 创建请求处理(
   /** 派活结果归档：追加到讨论区，留痕可追溯，但不作写作依据。 */
   async function 归档派活(任务: string, 章号: number, 标题: string, 结果: any) {
     if (!状态.项目) return
-    const 相对 = "reference/讨论/讨论-智能体派活.md"
+    const 相对 = 派活归档
     const 文件 = path.join(状态.项目.路径, 相对)
     const 已有 = fs.existsSync(文件)
     const 段: string[] = []

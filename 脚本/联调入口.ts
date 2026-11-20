@@ -21,7 +21,7 @@ async function 主() {
   const 项目 = await 扫描项目(书库)
   const 看板 = await 装配看板(书库, 项目.统计.最新章节)
   const 末章 = 项目.卷.at(-1)?.章节.at(-1)
-  const 正文 = await 读文本(path.join(书库, "manuscripts.binder", 末章?.文件 ?? ""))
+  const 正文 = await 读文本(path.join(书库, 末章?.文件 ?? ""))
 
   const 系统提示 = 组装系统提示({
     书名: 项目.书名,

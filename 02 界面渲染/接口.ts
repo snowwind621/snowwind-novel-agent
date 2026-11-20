@@ -90,6 +90,7 @@ export interface 桥接口 {
   派活: (任务: string, 章节号: number) => Promise<派活结果>
   监听派活: (回调: (事件: 派活进度) => void) => () => void
   导出: (格式: string) => Promise<导出结果>
+  导入旧书库: (旧根: string, 新根: string) => Promise<{ 成功: boolean; 说明: string }>
   模型清单: () => Promise<string[] | { 错误: string }>
   读取设置: () => Promise<设置>
   保存设置: (设置: 设置) => Promise<设置>
