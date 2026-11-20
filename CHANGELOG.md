@@ -8,7 +8,7 @@
 
 ## [未发布]
 
-## [0.3.0] - 2026-11-20
+## [0.1.2] - 2026-11-20
 
 第二个发布版：界面重做、设置体系、打包、单元格化。
 
@@ -57,9 +57,9 @@
 - 左栏新增第四个页签「建议」，集群面板显示「N 条待裁定」，点它跳转
 - **只记录、不采纳**：没有任何一键应用按钮，设定卡永远由人确认后才改
 
-## [0.2.0] - 2026-11-20
+## [0.1.1] - 2026-11-20
 
-书库格式换成自有的「雪风卷宗 v1」。
+书库格式换成自有的「雪风卷宗 v1」。这是本项目第一次真正的**破坏性变更**，所以单独发一个补丁号记录。
 
 ### 破坏性变更
 
@@ -120,7 +120,7 @@
 
 ---
 
-[未发布]: https://github.com/snowwind621/snowwind-novel-agent/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/snowwind621/snowwind-novel-agent/releases/tag/v0.3.0
-[0.2.0]: https://github.com/snowwind621/snowwind-novel-agent/releases/tag/v0.2.0
+[未发布]: https://github.com/snowwind621/snowwind-novel-agent/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/snowwind621/snowwind-novel-agent/releases/tag/v0.1.2
+[0.1.1]: https://github.com/snowwind621/snowwind-novel-agent/releases/tag/v0.1.1
 [0.1.0]: https://github.com/snowwind621/snowwind-novel-agent/releases/tag/v0.1.0
