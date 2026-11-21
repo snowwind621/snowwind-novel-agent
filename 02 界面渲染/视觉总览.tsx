@@ -92,7 +92,12 @@ export function 视觉总览(属性: {
   /** 补齐台账之后让外面重读看板 */
   刷新看板?: () => void
 }) {
-  const [分类, set分类] = useState<分类>("总览")
+  const [分类, set分类] = useState<分类>(() => {
+    // 深链 ?分类=秘密 只影响这一次打开；也给验收和排查用
+    const 要 = new URLSearchParams(location.search).get("分类")
+    const 允许 = ["总览", "一致性", "时间线", "人物", "伏笔", "关系", "秘密", "物品", "队伍", "出场"]
+    return (要 && 允许.includes(要) ? 要 : "总览") as 分类
+  })
   const [文件们, set文件们] = useState<Record<string, string>>({})
   const [读了, set读了] = useState(false)
   const [伏笔筛, set伏笔筛] = useState<"全部" | "超期" | "久置" | "待兑" | "已兑">("全部")
@@ -136,6 +141,62 @@ export function 视觉总览(属性: {
     }
   }, [属性.项目?.路径, 属性.版次])
 
+  // 游标要先算（下面这几个 effect 依赖它）；项目还没来时按 0 处理。
+  const 最新章节 = 属性.项目 ? 属性.项目.统计.最新章节 || 0 : 0
+  const 游标 = 读到 > 0 ? Math.min(读到, 最新章节) : 最新章节
+
+  // 这三个 effect 必须在「项目为空」的早退之前：hooks 顺序不能随渲染分支变化，
+  // 否则项目从 null 变成有值的那一次渲染会多出三个 hook —— React #310。
+  // 知情数据：数据层给了就画矩阵，没给（或通道还没上线）就落空态。
+  useEffect(() => {
+    if (!属性.项目) return
+    const 取 = 桥.查知情
+    if (!取) {
+      set知情数据(null)
+      return
+    }
+    let 有效 = true
+    void 取(undefined, undefined, 游标)
+      .then((结果) => {
+        if (有效) set知情数据(结果)
+      })
+      .catch(() => {
+        if (有效) set知情数据(null)
+      })
+    return () => {
+      有效 = false
+    }
+  }, [属性.项目?.路径, 游标])
+
+  // 一致性：读一次 + 事件来了再读（补齐之后后端会推一次）
+  useEffect(() => {
+    if (!属性.项目) return
+    let 有效 = true
+    const 拉 = async () => {
+      const 取 = 桥.台账一致性检查
+      if (!取) return
+      try {
+        const 报告 = await 取()
+        if (有效) set一致(报告)
+      } catch {
+        if (有效) set一致(null)
+      }
+    }
+    void 拉()
+    const 卸 = 桥.监听一致性?.(() => void 拉())
+    return () => {
+      有效 = false
+      卸?.()
+    }
+  }, [属性.项目?.路径, 属性.版次])
+
+  // 外部（编辑器状态字）要求看某一类时切过去
+  useEffect(() => {
+    const 要 = 属性.分类请求
+    if (!要) return
+    if (分类们.some((项) => 项.名 === 要)) set分类(要 as 分类)
+  }, [属性.分类请求])
+
   const 悬停 = (水平: number, 垂直: number, 文: string) => {
     const 框 = 壳.current?.getBoundingClientRect()
     set提示({ 左: 水平 - (框?.left ?? 0) + 12, 上: 垂直 - (框?.top ?? 0) + 14, 文 })
@@ -152,9 +213,6 @@ export function 视觉总览(属性: {
     )
   }
 
-  const 最新章节 = 属性.项目.统计.最新章节 || 0
-  /** 游标：0 表示跟到最新；否则截到第 N 章，所有视图都按它算 */
-  const 游标 = 读到 > 0 ? Math.min(读到, 最新章节) : 最新章节
   const 章们: 章点[] = 属性.项目.卷
     .flatMap((卷) => 卷.章节.map((章) => ({ 编号: 章.编号, 标题: 章.标题, 字数: 章.字数 })))
     .filter((章) => 章.编号 <= 游标)
@@ -222,56 +280,6 @@ export function 视觉总览(属性: {
     if (上 < 文本.length) 出.push(文本.slice(上))
     return 出
   }
-
-  // 知情数据：数据层给了就画矩阵，没给（或通道还没上线）就落空态。
-  useEffect(() => {
-    if (!属性.项目) return
-    const 取 = 桥.查知情
-    if (!取) {
-      set知情数据(null)
-      return
-    }
-    let 有效 = true
-    void 取(undefined, undefined, 游标)
-      .then((结果) => {
-        if (有效) set知情数据(结果)
-      })
-      .catch(() => {
-        if (有效) set知情数据(null)
-      })
-    return () => {
-      有效 = false
-    }
-  }, [属性.项目?.路径, 游标])
-
-  // 一致性：读一次 + 事件来了再读（补齐之后后端会推一次）
-  useEffect(() => {
-    if (!属性.项目) return
-    let 有效 = true
-    const 拉 = async () => {
-      const 取 = 桥.台账一致性检查
-      if (!取) return
-      try {
-        const 报告 = await 取()
-        if (有效) set一致(报告)
-      } catch {
-        if (有效) set一致(null)
-      }
-    }
-    void 拉()
-    const 卸 = 桥.监听一致性?.(() => void 拉())
-    return () => {
-      有效 = false
-      卸?.()
-    }
-  }, [属性.项目?.路径, 属性.版次])
-
-  // 外部（编辑器状态字）要求看某一类时切过去
-  useEffect(() => {
-    const 要 = 属性.分类请求
-    if (!要) return
-    if (分类们.some((项) => 项.名 === 要)) set分类(要 as 分类)
-  }, [属性.分类请求])
 
   const 读完一致 = async () => {
     const 取 = 桥.台账一致性检查
@@ -557,26 +565,28 @@ export function 视觉总览(属性: {
       const 知情 = 知情数据
       const 正文 = 文件们.禁揭清单 ?? ""
       // 有知情数据就画矩阵：谁在读到 chN 这一刻知道、依据在哪一句
-      if (知情 && 知情.条目.length > 0) {
-        const 秘密们 = 知情.秘密们.length > 0 ? 知情.秘密们 : Array.from(new Set(知情.条目.map((条) => 条.秘密)))
-        const 人 = 知情.人.length > 0 ? 知情.人 : Array.from(new Set(知情.条目.map((条) => 条.人)))
-        const 到游标 = 知情.条目.filter((条) => 条.何时知道 === null || 条.何时知道 <= 游标)
+      const 秘密们0 = Array.isArray(知情?.秘密) ? 知情!.秘密 : []
+      if (秘密们0.length > 0) {
+        const 到游标 = 秘密们0.map((项) => ({
+          名称: 项.名称,
+          知情: (项.知情 ?? []).filter((条) => (条.何时知道 ?? 0) <= 游标),
+          不知情: 项.不知情 ?? [],
+        }))
         return (
           <div className="数据块">
             <div className="数据块头">
               <span>秘密矩阵</span>
-              <span>{秘密们.length} 条秘密 · 读到 ch{游标} 为止的知情状态</span>
+              <span>{到游标.length} 条秘密 · 读到 ch{游标} 为止的知情状态</span>
             </div>
             <div className="秘密格">
-              {秘密们.map((秘密) => {
-                const 该条 = 到游标.filter((条) => 条.秘密 === 秘密)
-                const 知道 = 该条.map((条) => 条.人)
-                const 不知道 = 人.filter((名) => !知道.includes(名))
+              {到游标.map((秘密) => {
+                const 该条 = 秘密.知情
+                const 不知道 = 秘密.不知情
                 return (
-                  <div key={秘密} className="秘密卡">
+                  <div key={秘密.名称} className="秘密卡">
                     <div className="秘密卡头">
-                      <b>{秘密}</b>
-                      <span className="徽">{知道.length} 人知道 / {不知道.length} 人不知道</span>
+                      <b>{秘密.名称}</b>
+                      <span className="徽">{该条.length} 人知道 / {不知道.length} 人不知道</span>
                     </div>
                     <div className="秘密双栏">
                       <div className="秘密栏">
@@ -585,7 +595,7 @@ export function 视觉总览(属性: {
                         {该条.map((条, 序) => (
                           <div key={序} className="秘密卡行">
                             <b>{条.人}</b>
-                            <span className="秘密时">{条.何时知道 === null ? "何时知道未记" : "ch" + 条.何时知道}</span>
+                            <span className="秘密时">{条.何时知道 ? "ch" + 条.何时知道 : "何时知道未记"}</span>
                             {条.依据 ? <span className="秘密依">依据：{章链(条.依据)}</span> : null}
                           </div>
                         ))}

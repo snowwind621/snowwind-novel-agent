@@ -18,7 +18,8 @@ export interface 候选 {
 
 export interface 一致性问题 {
   规则: string
-  级别: "可补齐" | "需裁定"
+  /** 提示 = 半成品里的正常情况（计划中的章），不计入错误数 */
+  级别: "可补齐" | "需裁定" | "提示"
   册: string
   章号?: number
   说明: string
@@ -259,13 +260,49 @@ export async function 检查一致性(根: string, 最新章节: number): Promis
     出场.行们.some((项) => 项.姓名.includes(名) || 名.includes(项.姓名)) ||
     时间线.some((条) => 条.事件.includes(名))
   const 是像人名 = (名: string) => 名.length >= 2 && 名.length <= 10 && !/^[这那某等们家些]/.test(名) && !/\d/.test(名)
+  // NPC 启发式：宁可少报。泛称词命中 / 只在关系线出现过一次且正文与时间线都没提过 → 当 NPC，不建卡
+  const 泛称词 = /(员|工|兵|众|群|们|家|某|人|者|官|警|医|孩子|小孩|女人|村民|士兵|职员|干事|临时工|登记员|校长|隔壁|夫妻|夫妇)/
+  const 正文全文 = (() => {
+    let 全 = ""
+    const 走正文 = (目录: string) => {
+      let 项们: fs.Dirent[] = []
+      try {
+        项们 = fs.readdirSync(目录, { withFileTypes: true })
+      } catch {
+        return
+      }
+      for (const 项 of 项们) {
+        const 全路径 = path.join(目录, 项.name)
+        if (项.isDirectory()) 走正文(全路径)
+        else if (项.name.endsWith(".md")) 全 += 读(全路径) + "\n"
+      }
+    }
+    走正文(path.join(根, 路径.正文))
+    return 全
+  })()
+  const 时间线全文 = 时间线.map((条) => 条.事件).join("\n")
+  const 关系线计数 = new Map<string, number>()
+  for (const 表 of 解析表格(读(path.join(根, 台账册.关系线)))) {
+    const 对列 = 表.表头.findIndex((头) => 头.includes("关系对") || 头.includes("人物对"))
+    if (对列 < 0) continue
+    for (const 行 of 表.行) {
+      for (const 名 of 取格(行, 对列).split(/[↔<>\-—→、/／]/).map((项) => 项.trim()).filter(Boolean)) {
+        关系线计数.set(名, (关系线计数.get(名) ?? 0) + 1)
+      }
+    }
+  }
+  const 是NPC = (名: string) => {
+    if (泛称词.test(名)) return true
+    const 次数 = 关系线计数.get(名) ?? 0
+    return 次数 <= 1 && !正文全文.includes(名) && !时间线全文.includes(名)
+  }
   const 已报 = new Set<string>()
   for (const 表 of 解析表格(读(path.join(根, 台账册.关系线)))) {
     const 对列 = 表.表头.findIndex((头) => 头.includes("关系对") || 头.includes("人物对"))
     if (对列 < 0) continue
     for (const 行 of 表.行) {
       for (const 名 of 取格(行, 对列).split(/[↔<>\-—→、/／]/).map((项) => 项.trim()).filter(Boolean)) {
-        if (已报.has(名) || !是像人名(名) || 别处出现过(名)) continue
+        if (已报.has(名) || !是像人名(名) || 别处出现过(名) || 是NPC(名)) continue
         已报.add(名)
         问题们.push({
           规则: "关系线人物无卡",
@@ -326,13 +363,29 @@ export async function 检查一致性(根: string, 最新章节: number): Promis
       for (const 行 of 表.行) {
         for (const 列 of 章列们) {
           for (const 号 of 章号们(取格(行, 列))) {
-            if (号 > 最新章节 && 号 < 1000) {
+            // 四位以上的数字多半是年份（2026）而不是章号，直接不当章号看
+            if (号 > 999) continue
+            if (号 < 1) {
+              问题们.push({ 规则: "章号越界", 级别: "需裁定", 册, 章号: 号, 说明: "「" + 表.表头[列] + "」里写着 ch" + 号 + "，章号不能小于 1" })
+              continue
+            }
+            if (号 <= 最新章节) continue
+            // 半成品里往后写几章是计划，不是错误：近 30 章算提示，再远才算疑似笔误
+            if (号 <= 最新章节 + 30) {
+              问题们.push({
+                规则: "章号越界",
+                级别: "提示",
+                册,
+                章号: 号,
+                说明: "「" + 表.表头[列] + "」写着 ch" + 号 + "（计划中的章，正文还没写到）",
+              })
+            } else {
               问题们.push({
                 规则: "章号越界",
                 级别: "需裁定",
                 册,
                 章号: 号,
-                说明: "「" + 表.表头[列] + "」里写着 ch" + 号 + "，但全书只有 " + 最新章节 + " 章",
+                说明: "「" + 表.表头[列] + "」里写着 ch" + 号 + "，疑似笔误：全书只有 " + 最新章节 + " 章",
               })
             }
           }
@@ -355,13 +408,25 @@ export async function 检查一致性(根: string, 最新章节: number): Promis
     }
   }
 
-  return 问题们
+  // 忽略名单：设定/一致性忽略.md，一行一条；# 开头是注释。写人名只压规则④，写规则名整条规则关掉
+  const 忽略文件 = path.join(根, 路径.设定, "一致性忽略.md")
+  const 忽略 = new Set(
+    读(忽略文件)
+      .split(/\r?\n/)
+      .map((行) => 行.trim())
+      .filter((行) => 行 && !行.startsWith("#")),
+  )
+  const 过滤后 = 问题们.filter((项) => {
+    if (忽略.has(项.规则)) return false
+    if (项.规则 === "关系线人物无卡") {
+      const 名 = /「([^」]+)」/.exec(项.说明)?.[1] ?? ""
+      if (名 && 忽略.has(名)) return false
+    }
+    return true
+  })
+  return 过滤后
 }
 
-/**
- * 补齐：只处理「可补齐」，且必须 确认 === true 才写盘。
- * 未确认时一行都不改，原样返回问题清单，让界面去问作者。
- */
 export async function 补齐(
   根: string,
   问题们: 一致性问题[],

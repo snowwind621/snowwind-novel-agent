@@ -42,6 +42,29 @@ interface 页签 {
   正文: string
 }
 
+/** 中栏兜底：哪一块 UI 崩了，也只让中栏显示一行错误，顶栏/左栏/右栏照常能用。 */
+class 中栏兜底 extends React.Component<{ children: React.ReactNode }, { 错: string }> {
+  state = { 错: "" }
+
+  static getDerivedStateFromError(错: unknown) {
+    return { 错: String((错 as any)?.message ?? 错) }
+  }
+
+  render() {
+    if (this.state.错) {
+      return (
+        <div className="中栏">
+          <div className="空态">
+            中栏这块没能画出来：{this.state.错}
+            <br />
+            顶栏、左栏、右栏都还能用；切一下视图或重开这页再试。
+          </div>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 export function 三栏布局() {
   const [项目, set项目] = useState<项目摘要 | null>(null)
   const [看板, set看板] = useState<看板数据 | null>(null)
@@ -693,6 +716,7 @@ export function 三栏布局() {
           onPointerDown={起拖("左")}
           title="拖动调整左栏宽度"
         />
+        <中栏兜底 key={文件 ? "文件:" + 文件.相对路径 : 中栏视图}>
         {文件 ? (
           <文件视图 内容={文件} 保存={保存文件} 关闭={() => set文件(null)} />
         ) : 中栏视图 === "全书" ? (
@@ -728,6 +752,7 @@ export function 三栏布局() {
           切总览={() => set中栏视图("全书")}
         />
         )}
+        </中栏兜底>
         <div
           className={"分隔条" + (拖侧 === "右" ? " 拖拽中" : "")}
           onPointerDown={起拖("右")}

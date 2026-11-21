@@ -95,8 +95,12 @@ export interface 知情条目 {
 }
 
 export interface 知情结果 {
-  条目: 知情条目[]
-  秘密们: string[]
+  /** 有没有 台账/知情台账.md；没有也能用，只是空态 + 候选 */
+  有台账: boolean
+  /** 后端真实形状：按秘密分组（此前这里写的是 条目/秘密们，和实现对不上，导致秘密页白屏） */
+  秘密: Array<{ 名称: string; 知情: 知情条目[]; 不知情: string[] }>
+  候选?: Array<{ 名称: string; 可能涉及?: string[] }>
+  说明?: string
   人: string[]
 }
 
