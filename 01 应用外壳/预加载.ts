@@ -21,6 +21,12 @@ contextBridge.exposeInMainWorld("桥", {
   导出: (格式: string) => ipcRenderer.invoke(通道.导出, 格式),
   导入旧书库: (旧根: string, 新根: string) => ipcRenderer.invoke(通道.书库导入, 旧根, 新根),
    讨论: (话题: string, 章节号?: number) => ipcRenderer.invoke(通道.集群讨论, 话题, 章节号),
+   多视角: (章节号?: number) => ipcRenderer.invoke(通道.集群多视角, 章节号),
+   监听多视角: (回调: (进度: unknown) => void) => {
+      const 监听 = (_: unknown, 载荷: unknown) => 回调(载荷)
+      ipcRenderer.on(推送事件.多视角进度, 监听)
+      return () => ipcRenderer.off(推送事件.多视角进度, 监听)
+    },
    /** 服务端讨论的进度（返回退订函数）：刷新页面不打断，重连后继续收 */
    监听讨论: (回调: (进度: unknown) => void) => {
       const 监听 = (_: unknown, 载荷: unknown) => 回调(载荷)

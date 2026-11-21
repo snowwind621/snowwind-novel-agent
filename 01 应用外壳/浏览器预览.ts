@@ -63,6 +63,27 @@ const 服务 = http.createServer(async (请求, 响应) => {
       }
     }
 
+    // 多视角闭环：POST 起一次，进度用 SSE 推回来；成文只在返回里给作者看，不落盘
+    if (地址 === "/接口/多视角" && 请求.method === "POST") {
+      const 参数 = JSON.parse(await 读体(请求)) as { 章节号?: number }
+      响应.writeHead(200, {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      })
+      处理器.设置推送((类型, 载荷) => {
+        if (类型 === 推送事件.多视角进度) 响应.write("data: " + JSON.stringify({ 类型: "进度", ...(载荷 as object) }) + "\n\n")
+      })
+      try {
+        const 结果 = await 处理器.处理[通道.集群多视角](参数.章节号)
+        响应.write("data: " + JSON.stringify({ 类型: "结果", ...(结果 as object) }) + "\n\n")
+      } catch (错误: any) {
+        响应.write("data: " + JSON.stringify({ 类型: "错误", 说明: String(错误?.message ?? 错误) }) + "\n\n")
+      }
+      响应.end()
+      return
+    }
+
     // 服务端讨论：POST 起一场，进度用 SSE 推回来；讨论本身在服务端跑，客户端断开也照跑
     if (地址 === "/接口/讨论" && 请求.method === "POST") {
       const 参数 = JSON.parse(await 读体(请求)) as { 话题?: string; 章节号?: number }
