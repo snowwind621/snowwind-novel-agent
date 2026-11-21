@@ -74,6 +74,12 @@
   --泡我: #ccd8f2;
   --泡边: #d9d3c8;
 }
+/* 米黄：助手用奶油纸，你用暖棕淡染，边界靠描边而不是靠亮度差 */
+[data-主题="米黄"] .对话区 {
+  --泡它: #f7f2e7;
+  --泡我: #f0e4cf;
+  --泡边: #e2d8c3;
+}
 
 .消息组 { display: flex; align-items: flex-start; gap: 8px; margin-top: 16px; }
 .消息组:first-child { margin-top: 0; }

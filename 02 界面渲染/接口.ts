@@ -202,7 +202,7 @@ export interface 桥接口 {
   /** 跨台账一致性检查（可能还没在桌面预加载里注册，所以是可选的） */
   台账一致性检查?: () => Promise<一致性报告>
   /** 一键补齐可修的那些（桥上会替界面带上「确认」） */
-  台账一致性补齐?: (确认: boolean) => Promise<补齐结果>
+  台账一致性补齐?: (问题们?: 一致性问题[], 确认?: boolean) => Promise<补齐结果>
   /** 一致性结果变了（补齐 / 台账同步之后） */
   监听一致性?: (回调: (事件: 一致性提示) => void) => () => void
   集群成员: () => Promise<集群成员[]>
@@ -275,8 +275,8 @@ export function 补齐设置(原始: any): 设置 {
   } as 设置
 }
 
-/** 「跟随系统」按系统深浅色解析成 暗 / 亮。 */
-export function 解析主题(主题: 外观设置["主题"]): "暗" | "亮" {
+/** 「跟随系统」按系统深浅色解析成 暗 / 亮；米黄是独立的第三套，不参与跟随。 */
+export function 解析主题(主题: 外观设置["主题"]): "米黄" | "暗" | "亮" {
   if (主题 !== "跟随系统") return 主题
   const 深 = typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)").matches : true
   return 深 ? "暗" : "亮"
