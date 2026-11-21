@@ -51,10 +51,14 @@ export interface 一致性提示 {
   问题数: number
   可补齐: number
   需裁定: number
+  /** 提示 = 半成品里的正常情况（计划中的章），不计入错误数 */
+  提示: number
 }
 
 export interface 一致性报告 extends 一致性提示 {
   问题们: 一致性问题[]
+  /** 后端只回前 200 条；这个数字表示总条数（可能大于 问题们.length） */
+  显示条数?: number
 }
 
 export interface 自动同步状态 {
@@ -280,6 +284,28 @@ export function 补齐设置(原始: any): 设置 {
 }
 
 /** 「跟随系统」按系统深浅色解析成 暗 / 亮；米黄是独立的第三套，不参与跟随。 */
+/** 把一条问题写进「设定/一致性忽略.md」：写规则名 = 整条规则以后都不报。 */
+export async function 记录一致忽略(条目: 一致性问题): Promise<{ 成功: boolean; 说明: string }> {
+  const 相对 = "设定/一致性忽略.md"
+  const 行 = (条目.规则 ?? "").trim()
+  if (!行) return { 成功: false, 说明: "这条没有规则名，忽略不了" }
+  let 原文 = ""
+  try {
+    const 读 = await 桥.书库读文件(相对)
+    原文 = 读.是文本 ? 读.文本 : ""
+  } catch {
+    /* 文件还没有就是空的 */
+  }
+  const 已有 = 原文
+    .split(/\r?\n/)
+    .map((行文) => 行文.trim())
+    .filter((行文) => 行文 && !行文.startsWith("#"))
+  if (已有.includes(行)) return { 成功: true, 说明: "「" + 行 + "」已经在忽略名单里了" }
+  const 新文 = (原文.trimEnd() ? 原文.trimEnd() + "\n" : "# 一致性忽略名单：一行一条，# 开头是注释。写规则名 = 整条规则不再报。\n") + 行 + "\n"
+  const 写 = await 桥.书库写文件(相对, 新文)
+  return { 成功: 写.成功, 说明: 写.成功 ? "已把「" + 行 + "」写进 " + 相对 : 写.说明 }
+}
+
 export function 解析主题(主题: 外观设置["主题"]): "米黄" | "暗" | "亮" {
   if (主题 !== "跟随系统") return 主题
   const 深 = typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)").matches : true

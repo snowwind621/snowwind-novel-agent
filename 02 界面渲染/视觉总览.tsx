@@ -1,6 +1,6 @@
 // 只负责一件事：中栏「数据」面板——左边分类导航，右边每类台账的专属界面（只读、手绘 SVG）。
 import React, { useEffect, useRef, useState } from "react"
-import { 桥, 千字 } from "./接口"
+import { 桥, 千字, 记录一致忽略 } from "./接口"
 import type { 一致性报告, 一致性问题, 知情结果, 看板数据, 项目摘要 } from "./接口"
 import { 图标 } from "./图标"
 import type { 图标名 } from "./图标"
@@ -109,7 +109,10 @@ export function 视觉总览(属性: {
   const [知情数据, set知情数据] = useState<知情结果 | null>(null)
   /** 跨台账一致性：面板第二类，也是产品承诺的兜底 */
   const [一致, set一致] = useState<一致性报告 | null>(null)
-  const [一致筛, set一致筛] = useState<"全部" | "可补齐" | "需裁定">("全部")
+  const [一致筛, set一致筛] = useState<"全部" | "可补齐" | "需裁定" | "提示">("全部")
+  /** 默认只显示前 30 条，点「查看全部」才展开 */
+  const [显示全量, set显示全量] = useState(false)
+  const [忽略中, set忽略中] = useState(false)
   const [补齐中, set补齐中] = useState(false)
   const [补齐话, set补齐话] = useState("")
   const [提示, set提示] = useState<{ 左: number; 上: number; 文: string } | null>(null)
@@ -220,7 +223,7 @@ export function 视觉总览(属性: {
   const 总字 = 章们.reduce((和, 章) => 和 + 章.字数, 0)
   const 均值 = 章数 > 0 ? Math.round(总字 / 章数) : 0
   // 伏笔按游标重算：游标之后才兑的，到游标这一刻仍然「未兑」
-  const 伏笔们: 伏笔条[] = (属性.看板?.伏笔 ?? [])
+  const 伏笔们: 伏笔条[] = (Array.isArray(属性.看板?.伏笔) ? 属性.看板!.伏笔 : [])
     .filter((项) => 项.埋章 === null || 项.埋章 <= 游标)
     .map((项) => {
       const 兑章 = 项.兑章.filter((章) => 章 <= 游标)
@@ -397,8 +400,27 @@ export function 视觉总览(属性: {
       if (!桥.台账一致性检查) {
         return <div className="数据空">这个版本还没有接上一致性检查（桌面端预加载还没暴露）。</div>
       }
-      const 全部 = 一致?.问题们 ?? []
-      const 筛后 = 全部.filter((项) => (一致筛 === "全部" ? true : 项.级别 === 一致筛))
+      const 全部 = Array.isArray(一致?.问题们) ? 一致!.问题们 : []
+      const 筛后全 = 全部.filter((项) => (一致筛 === "全部" ? true : 项.级别 === 一致筛))
+      const 上限 = 30
+      const 筛后 = 显示全量 ? 筛后全 : 筛后全.slice(0, 上限)
+      const 忽略一条 = async (项: 一致性问题) => {
+        set忽略中(true)
+        try {
+          const 结果 = await 记录一致忽略(项)
+          set补齐话(结果.说明)
+          await 读完一致()
+        } catch (错误: any) {
+          set补齐话("忽略失败：" + String(错误?.message ?? 错误))
+        } finally {
+          set忽略中(false)
+        }
+      }
+      const 数字们: Array<{ 名: "可补齐" | "需裁定" | "提示"; 数: number; 类: string; 提示: string }> = [
+        { 名: "可补齐", 数: 一致?.可补齐 ?? 0, 类: "", 提示: "点一下只看能自动补的" },
+        { 名: "需裁定", 数: 一致?.需裁定 ?? 0, 类: " 需", 提示: "点一下只看要你自己定的" },
+        { 名: "提示", 数: 一致?.提示 ?? 0, 类: " 提", 提示: "半成品里的正常情况（比如计划中的章），不算错误" },
+      ]
       return (
         <div className="数据块">
           <div className="数据块头">
@@ -406,20 +428,16 @@ export function 视觉总览(属性: {
             <span>跨台账对不上的地方 · 补齐只动台账文件，能回滚</span>
           </div>
           <div className="一致数行">
-            <button
-              className={"一致数" + (一致筛 === "可补齐" ? " 选中" : "")}
-              onClick={() => set一致筛(一致筛 === "可补齐" ? "全部" : "可补齐")}
-              title="点一下只看能自动补的"
-            >
-              可补齐 <b>{一致?.可补齐 ?? 0}</b>
-            </button>
-            <button
-              className={"一致数 需" + (一致筛 === "需裁定" ? " 选中" : "")}
-              onClick={() => set一致筛(一致筛 === "需裁定" ? "全部" : "需裁定")}
-              title="点一下只看要你自己定的"
-            >
-              需裁定 <b>{一致?.需裁定 ?? 0}</b>
-            </button>
+            {数字们.map((项) => (
+              <button
+                key={项.名}
+                className={"一致数" + 项.类 + (一致筛 === 项.名 ? " 选中" : "")}
+                onClick={() => set一致筛(一致筛 === 项.名 ? "全部" : 项.名)}
+                title={项.提示}
+              >
+                {项.名} <b>{项.数}</b>
+              </button>
+            ))}
             <button
               className="一致全补"
               onClick={() => void 全部补齐()}
@@ -433,10 +451,10 @@ export function 视觉总览(属性: {
           {全部.length === 0 ? <div className="数据空">台账之间没有对不上的地方</div> : null}
           {全部.length > 0 && 筛后.length === 0 ? <div className="数据空">这个筛法下没有条目</div> : null}
           {筛后.map((项, 序) => (
-            <div key={序} className={"一致卡 " + (项.级别 === "可补齐" ? "可补" : "需裁")}>
+            <div key={序} className={"一致卡 " + (项.级别 === "可补齐" ? "可补" : 项.级别 === "提示" ? "提" : "需裁")}>
               <div className="一致卡头">
                 <span className="一致规则">{项.规则}</span>
-                <span className={"徽 " + (项.级别 === "可补齐" ? "" : "超期")}>{项.级别}</span>
+                <span className={"徽 " + (项.级别 === "需裁定" ? "超期" : "")}>{项.级别}</span>
               </div>
               <div className="一致卡元">
                 <button className="章链" onClick={() => 属性.打开文件(项.册)} title={"打开 " + 项.册}>
@@ -465,11 +483,31 @@ export function 视觉总览(属性: {
                 <button className="一致补" onClick={() => void 补齐([项])} disabled={补齐中} title="就改这一处">
                   ✓ 补齐
                 </button>
+              ) : 项.级别 === "提示" ? (
+                <div className="一致提示 提">计划/半成品里的正常情况，不用管</div>
               ) : (
-                <div className="一致提示">这条要你自己决定怎么改</div>
+                <div className="一致脚行">
+                  <span className="一致提示">这条要你自己决定怎么改</span>
+                  <button
+                    className="小按钮 一致忽略"
+                    onClick={() => void 忽略一条(项)}
+                    disabled={忽略中}
+                    title={"把「" + 项.规则 + "」写进 设定/一致性忽略.md，以后整条规则都不再报"}
+                  >
+                    以后不再提示
+                  </button>
+                </div>
               )}
             </div>
           ))}
+          {筛后全.length > 上限 ? (
+            <div className="一致脚">
+              <span>共 {筛后全.length} 条，显示前 {上限}</span>
+              <button className="小按钮" onClick={() => set显示全量((旧) => !旧)}>
+                {显示全量 ? "只看前 " + 上限 : "查看全部"}
+              </button>
+            </div>
+          ) : null}
         </div>
       )
     }
@@ -478,7 +516,7 @@ export function 视觉总览(属性: {
       const 命中 = 找表(文件们.时间线 ?? "", ["日期", "事件"])
       if (!命中) return <div className="数据空">台账/时间线.md 里没读到「日期 / 事件 / 章节」三列</div>
       const { 表, 列号 } = 命中
-      const 点们: 时间点[] = 表.行
+      const 点们: 时间点[] = (Array.isArray(表.行) ? 表.行 : [])
         .map((行) => ({ 日期: 取格(行, 列号[0]), 事件: 取格(行, 列号[1]), 章: 列号[2] >= 0 ? 取格(行, 列号[2]) : "" }))
         .filter((点) => 点.日期 || 点.事件)
         .filter((点) => {

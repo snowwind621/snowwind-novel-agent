@@ -402,7 +402,15 @@ export function 三栏布局() {
     )
     set当前页号(页.id)
     set文件(null)
-    set中栏视图("编辑")
+    // 深链 ?视图=全书 打开时，首次自动开章不要把它盖回「编辑」（标记用一次就消费掉）
+    let 深链看书 = false
+    try {
+      深链看书 = sessionStorage.getItem("深链视图") === "全书"
+      if (深链看书) sessionStorage.removeItem("深链视图")
+    } catch {
+      /* 读不到就当没有 */
+    }
+    if (!深链看书) set中栏视图("编辑")
   }
 
   const 切页签 = async (id: string) => {
