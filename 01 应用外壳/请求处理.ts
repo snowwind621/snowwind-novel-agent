@@ -17,11 +17,12 @@ import type { 对话消息 } from "../04 模型接入/网关客户端"
 import { 工具声明们, 跑工具, 解析约定块, 已确认, 按名找 } from "../06 智能体运行时/工具执行"
 import { 执行成员 } from "../06 智能体运行时/执行器"
 import { 总控提示 } from "../05 编排内核/总控提示词"
+import { 跑讨论 } from "../05 编排内核/讨论编排"
 import { 投影台账, 投影设定, 投影伏笔, 投影知情 } from "../06 智能体运行时/书库投影"
 import type { 工具环境 } from "../06 智能体运行时/工具执行"
 import { 组装系统提示 } from "../05 编排内核/章节提示词"
 import { 同步章节台账 } from "../09 台账同步/同步台账"
-import { 路径, 派活归档, 计划 } from "../10 书库检索/书库布局"
+import { 路径, 台账册, 派活归档, 计划 } from "../10 书库检索/书库布局"
 import { 导入旧书库 } from "../16 书库迁移/导入旧书库"
 import { 抽建议, 写建议文件, 读全部建议 } from "../17 建议审阅/待裁定建议"
 import { 生成集群, 读集群, 存集群 } from "../06 智能体运行时/成员目录"
@@ -246,6 +247,29 @@ export function 创建请求处理(
     [通道.台账立即同步]: async (章节号: number) => {
       if (!状态.项目) return { 成功: false, 说明: "尚未打开书库" }
       return 立即同步(状态.项目.路径, 章节号)
+    },
+
+    /** 服务端讨论：进度走推送，结果落 讨论/（刷新页面也照跑）。 */
+    [通道.集群讨论]: async (话题: string, 章节号?: number) => {
+      if (!状态.项目) return { 成功: false, 归档: "", 发言: [], 收口: "", 说明: "尚未打开书库" }
+      const 设置 = 读设置(数据目录)
+      const 成员们 = await 取集群()
+      return 跑讨论({
+        根目录: 状态.项目.路径,
+        数据目录,
+        话题: String(话题 ?? "").trim() || "这一章接下来怎么写",
+        章节号: Number(章节号) || 状态.项目.统计.最新章节,
+        成员们,
+        阵容上限: 设置.智能体.阵容上限,
+        讨论人数: 设置.智能体.讨论人数,
+        基址: 设置.模型.网关地址,
+        密钥: 设置.模型.API密钥,
+        模型: 设置.模型.分工.总编,
+        策略: 取调用策略(设置.模型),
+        单卡注入字数: 设置.上下文.单卡注入字数,
+        技能: 设置.智能体.技能,
+        推: (进度) => 推送回调?.(推送事件.讨论进度, 进度),
+      })
     },
 
     [通道.台账一致性]: async (重新检查?: boolean) => {
@@ -640,6 +664,16 @@ export function 创建请求处理(
     return null
   }
 
+  /** 口语册名 → 规范册名：「承诺台账」「时间线」「出场追踪」都认，唯一命中才换。 */
+  function 认册名(输入: string): string {
+    const 键 = String(输入 ?? "").replace(/^台账\//, "").replace(/\.md$/i, "").trim()
+    if (!键) return 键
+    const 规范 = Object.keys(台账册)
+    if (规范.includes(键)) return 键
+    const 命中 = 规范.filter((名) => 名.includes(键) || 键.includes(名))
+    return 命中.length === 1 ? 命中[0] : 键
+  }
+
   /** 计划里的「目标文件」常是模型猜的：把括号前的关键词拿到书库文件名里找，唯一命中才用。 */
   function 猜路径(文本: string): string | null {
     if (!状态.项目) return null
@@ -769,7 +803,15 @@ export function 创建请求处理(
         const 筛 = String(关键词 ?? "").trim()
         const 段: string[] = []
         let 行数 = 0
-        for (const 册 of 投影台账(状态.项目.路径, 台账)) {
+        const 册名 = 认册名(台账)
+        const 选中册们 = 投影台账(状态.项目.路径, 册名)
+        if (选中册们.length === 0) {
+          return {
+            文本: "没有叫「" + 台账 + "」的台账。可用册：" + Object.keys(台账册).join(" / "),
+            行数: 0,
+          }
+        }
+        for (const 册 of 选中册们) {
           for (const 表 of 册.表) {
             for (const 行 of 表.行) {
               const 文本 = Object.entries(行)
@@ -781,6 +823,26 @@ export function 创建请求处理(
               行数++
               if (段.length < 60) 段.push("[" + 册.类型 + "｜" + (表.标题 || "表") + "] " + 文本)
             }
+          }
+        }
+        if (行数 === 0 && 筛) {
+          // 关键词可能是一整句说明（计划里的「说明」列）：筛空了就退回整册，别让计划步骤白跑
+          const 全部段: string[] = []
+          for (const 册 of 选中册们) {
+            for (const 表 of 册.表) {
+              for (const 行 of 表.行) {
+                const 文本 = Object.entries(行)
+                  .filter(([, 值]) => 值 !== "")
+                  .map(([列, 值]) => 列 + "：" + 值)
+                  .join("；")
+                if (!文本) continue
+                if (全部段.length < 60) 全部段.push("[" + 册.类型 + "｜" + (表.标题 || "表") + "] " + 文本)
+              }
+            }
+          }
+          return {
+            文本: "（关键词「" + 筛.slice(0, 20) + "」没命中任何行，下面是整册前 " + 全部段.length + " 行）\n" + 全部段.join("\n"),
+            行数: 全部段.length,
           }
         }
         return { 文本: 段.length > 0 ? 段.join("\n") : "（没有匹配的行）", 行数 }

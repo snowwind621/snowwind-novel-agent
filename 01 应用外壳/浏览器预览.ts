@@ -4,7 +4,7 @@ import fs from "node:fs"
 import path from "node:path"
 import os from "node:os"
 import { 创建请求处理 } from "./请求处理"
-import { 通道 } from "../03 进程桥接/通道"
+import { 通道, 推送事件 } from "../03 进程桥接/通道"
 import type { 对话请求 } from "../03 进程桥接/通道"
 
 const 端口 = Number(process.env.预览端口 ?? "5178")
@@ -61,6 +61,27 @@ const 服务 = http.createServer(async (请求, 响应) => {
       } catch (错误: any) {
         return 应答(响应, 200, { 错误: String(错误?.message ?? 错误) })
       }
+    }
+
+    // 服务端讨论：POST 起一场，进度用 SSE 推回来；讨论本身在服务端跑，客户端断开也照跑
+    if (地址 === "/接口/讨论" && 请求.method === "POST") {
+      const 参数 = JSON.parse(await 读体(请求)) as { 话题?: string; 章节号?: number }
+      响应.writeHead(200, {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      })
+      处理器.设置推送((类型, 载荷) => {
+        if (类型 === 推送事件.讨论进度) 响应.write("data: " + JSON.stringify({ 类型: "进度", ...(载荷 as object) }) + "\n\n")
+      })
+      try {
+        const 结果 = await 处理器.处理[通道.集群讨论](参数.话题 ?? "", 参数.章节号)
+        响应.write("data: " + JSON.stringify({ 类型: "归档", ...(结果 as object) }) + "\n\n")
+      } catch (错误: any) {
+        响应.write("data: " + JSON.stringify({ 类型: "错误", 说明: String(错误?.message ?? 错误) }) + "\n\n")
+      }
+      响应.end()
+      return
     }
 
     // 台账自动同步进度：一条 SSE 长连接，界面订阅用
