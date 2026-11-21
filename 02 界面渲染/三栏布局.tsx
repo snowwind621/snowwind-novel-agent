@@ -418,12 +418,12 @@ export function 三栏布局() {
   }
 
   /** 保存当前标签：章走章节通道，md 文件走书库写文件。返回是否成功。 */
-  const 保存 = async (): Promise<boolean> => {
+  const 保存 = async (立即 = false): Promise<boolean> => {
     const 页 = 页签们.find((项) => 项.id === 当前页号)
     if (!页) return false
     try {
       if (页.种类 === "章" && 页.编号 !== undefined) {
-        const 结果 = await 桥.保存章节(页.编号, 页.正文)
+        const 结果 = await 桥.保存章节(页.编号, 页.正文, 立即)
         set状态字(结果.说明)
         if (!结果.成功) return false
         set看板(await 桥.读取看板())
@@ -641,6 +641,7 @@ export function 三栏布局() {
           />
         ) : (
         <正文编辑
+          自动保存毫秒={Math.round((设定?.编辑器.自动保存秒 ?? 1.2) * 1000)}
           已开书库={Boolean(项目)}
           标签们={页签们.map((页) => ({ id: 页.id, 标题: 页.标题, 种类: 页.种类 }))}
           当前标签={当前页号}

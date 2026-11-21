@@ -157,7 +157,7 @@ export interface 桥接口 {
   打开项目: (路径: string) => Promise<项目摘要 | null>
   当前项目: () => Promise<项目摘要 | null>
   读取章节: (编号: number) => Promise<{ 编号: number; 标题: string; 正文: string }>
-  保存章节: (编号: number, 正文: string) => Promise<{ 成功: boolean; 说明: string }>
+  保存章节: (编号: number, 正文: string, 立即?: boolean) => Promise<{ 成功: boolean; 说明: string }>
   读取看板: () => Promise<看板数据>
   台账同步: (章节号: number) => Promise<同步结果>
   集群成员: () => Promise<集群成员[]>

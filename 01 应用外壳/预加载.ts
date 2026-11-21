@@ -6,7 +6,7 @@ contextBridge.exposeInMainWorld("桥", {
   打开项目: (路径: string) => ipcRenderer.invoke(通道.打开项目, 路径),
   当前项目: () => ipcRenderer.invoke(通道.当前项目),
   读取章节: (编号: number) => ipcRenderer.invoke(通道.读取章节, 编号),
-  保存章节: (编号: number, 正文: string) => ipcRenderer.invoke(通道.保存章节, 编号, 正文),
+  保存章节: (编号: number, 正文: string, 立即?: boolean) => ipcRenderer.invoke(通道.保存章节, 编号, 正文, 立即 ?? false),
   读取看板: () => ipcRenderer.invoke(通道.读取看板),
   台账同步: (章节号: number) => ipcRenderer.invoke(通道.台账同步, 章节号),
   集群成员: () => ipcRenderer.invoke(通道.集群成员),

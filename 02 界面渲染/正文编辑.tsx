@@ -68,7 +68,7 @@ const 工具按钮们: Array<{ 名: string; 说明: string; 图标: 图标名; �
 
 /** 撤销栈：按标签各存一份，只存「已提交的改动」。 */
 const 栈深 = 100
-const 提交延迟 = 1200
+const 默认提交延迟 = 1200
 
 function 现在是(): string {
   const 日 = new Date()
@@ -84,11 +84,15 @@ export function 正文编辑(属性: {
   标题: string
   正文: string
   改: (正文: string) => void
-  保存: () => Promise<boolean>
+  /** 立即=true 表示「现在就提交 Git」（Ctrl+S / 切标签 / 失焦）；自动保存传 false 走节流 */
+  保存: (立即?: boolean) => Promise<boolean>
+  /** 自动保存防抖毫秒；不传就按 1.2 秒 */
+  自动保存毫秒?: number
   提示字?: string
   切总览?: () => void
 }) {
-  const { 已开书库, 标签们, 当前标签, 切标签, 关标签, 标题, 正文, 改, 保存, 提示字 } = 属性
+  const { 已开书库, 标签们, 当前标签, 切标签, 关标签, 标题, 正文, 改, 保存, 提示字, 自动保存毫秒 } = 属性
+  const 提交延迟 = Math.max(200, 自动保存毫秒 ?? 默认提交延迟)
   const 富 = useRef<HTMLDivElement | null>(null)
   const 合成中 = useRef(false)
   const 上次渲染 = useRef("")
@@ -173,7 +177,7 @@ export function 正文编辑(属性: {
   }, [正文, 当前标签])
 
   /** 立刻提交一次：压撤销栈 + 存盘。防抖到点、切标签、Ctrl+S 都走它。 */
-  const 提交 = async (): Promise<boolean> => {
+  const 提交 = async (立即 = false): Promise<boolean> => {
     if (提交计时.current !== null) {
       window.clearTimeout(提交计时.current)
       提交计时.current = null
@@ -187,7 +191,7 @@ export function 正文编辑(属性: {
       刷新按钮()
     }
     set保存状态("保存中…")
-    const 成 = await 最新保存.current()
+    const 成 = await 最新保存.current(立即)
     set保存状态(成 ? "已保存 " + 现在是() : "保存失败")
     return 成
   }
@@ -258,7 +262,7 @@ export function 正文编辑(属性: {
     window.setTimeout(() => 放光标(偏移 >= 0 ? 偏移 : 文.length), 0)
     刷新按钮()
     set保存状态("保存中…")
-    const 成 = await 最新保存.current()
+    const 成 = await 最新保存.current(true)
     set保存状态(成 ? "已保存 " + 现在是() : "保存失败")
   }
 
