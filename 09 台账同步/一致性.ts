@@ -129,7 +129,12 @@ function 读计划章数(根: string): number | null {
   }
   let 最大 = 0
   for (const 名 of 文件们) {
-    for (const 号 of 章号们(读(path.join(目录, 名)))) if (号 >= 1 && 号 <= 999 && 号 > 最大) 最大 = 号
+    // 只认「ch27」「第27章」这种明确写法；大纲里的裸数字（字数、页码、年份）不算章号
+    const 正文 = 读(path.join(目录, 名))
+    for (const 匹配 of 正文.matchAll(/(?:ch\s*(\d{1,4})|第\s*(\d{1,4})\s*章)/gi)) {
+      const 号 = Number(匹配[1] ?? 匹配[2])
+      if (号 >= 1 && 号 <= 999 && 号 > 最大) 最大 = 号
+    }
   }
   return 最大 > 0 ? 最大 : null
 }
