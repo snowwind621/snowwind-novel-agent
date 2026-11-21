@@ -84,6 +84,23 @@ export function 裁栈(栈: string[], 深度: number): string[] {
   return 栈.length <= 深 ? 栈 : 栈.slice(栈.length - 深)
 }
 
+/** 十万字级的章节分块灌：先出第一屏，剩下的按空闲时间接着灌，切章不再卡在解析上。 */
+function 按段切块(正文: string, 每块字 = 20000): string[] {
+  const 段们 = 正文.split(/\n{2,}/)
+  const 块们: string[] = []
+  let 当前 = ""
+  for (const 段 of 段们) {
+    if (当前 && 当前.length + 段.length > 每块字) {
+      块们.push(当前)
+      当前 = 段
+      continue
+    }
+    当前 = 当前 ? 当前 + "\n\n" + 段 : 段
+  }
+  if (当前) 块们.push(当前)
+  return 块们.length > 0 ? 块们 : [正文]
+}
+
 function 现在是(): string {
   const 日 = new Date()
   return String(日.getHours()).padStart(2, "0") + ":" + String(日.getMinutes()).padStart(2, "0")
@@ -136,6 +153,8 @@ export function 正文编辑(属性: {
   /** 防抖定时器里拿到的是旧闭包，所以「当前正文 / 保存函数」走 ref，永远读最新值 */
   const 最新正文 = useRef(正文)
   const 最新保存 = useRef(保存)
+  /** 分块灌入的续灌定时器（换章/换文本要掐掉） */
+  const 续灌 = useRef<number | null>(null)
 
   useEffect(() => {
     最新正文.current = 正文
@@ -292,6 +311,30 @@ export function 正文编辑(属性: {
     }
     if (!换了标签 && 上次渲染.current === 正文 && 元素.innerHTML !== "") return
     上次渲染.current = 正文
+    if (续灌.current !== null) {
+      window.clearTimeout(续灌.current)
+      续灌.current = null
+    }
+    // 大章节（>3 万字）分块：第一屏先出来，其余按段接着灌，避免一次性解析把切章卡住
+    if (正文.length > 30000) {
+      const 块们 = 按段切块(正文)
+      元素.innerHTML = 渲染Markdown(块们[0], { 缩进当文字: true }) || "<p><br></p>"
+      let 序 = 1
+      const 灌 = () => {
+        续灌.current = null
+        if (序 >= 块们.length) return
+        元素.insertAdjacentHTML("beforeend", 渲染Markdown(块们[序], { 缩进当文字: true }))
+        序 += 1
+        续灌.current = window.setTimeout(灌, 0)
+      }
+      续灌.current = window.setTimeout(灌, 0)
+      return () => {
+        if (续灌.current !== null) {
+          window.clearTimeout(续灌.current)
+          续灌.current = null
+        }
+      }
+    }
     元素.innerHTML = 渲染Markdown(正文, { 缩进当文字: true }) || "<p><br></p>"
   }, [正文, 当前标签])
 
