@@ -6,6 +6,8 @@ import { 组装系统提示 } from "../05 编排内核/章节提示词"
 import { 该压缩, 取要压的, 造摘要提示, 拼用户输入, 估算词元, 续摘要, 取摘要模型 } from "../06 智能体运行时/对话压缩"
 import type { 对话条 } from "../06 智能体运行时/对话压缩"
 import { 图标 } from "./图标"
+import { 归显示项, 过程标题, 过程图标, 过程进行中 } from "./对话分组"
+import type { 显示项 } from "./对话分组"
 import type { 图标名 } from "./图标"
 import "./对话样式.css"
 
@@ -84,6 +86,63 @@ interface 消息组 {
   谁: 对话条目["谁"]
   名: string
   条们: 对话条目[]
+  /** 这一块是一张过程卡（思考/工具合并），不是普通气泡组 */
+  过程?: boolean
+}
+
+/** 过程卡：连续的过程条目装进一张卡，卡头是活动图标 + 会变的标题 + 折叠箭头。
+ *  布局参考 OpenFic（Apache-2.0），实现为本项目自写。 */
+function 过程卡(属性: { 条们: 对话条目[] }) {
+  const 进行中 = 过程进行中(属性.条们)
+  return (
+    <details className={"过程卡" + (进行中 ? " 运行中" : "")}>
+      <summary className="过程头">
+        <图标 名={过程图标(属性.条们)} 大小={14} />
+        <span className={"过程题" + (进行中 ? " 流光" : "")}>{过程标题(属性.条们)}</span>
+        <span className="过程箭" aria-hidden="true" />
+      </summary>
+      <div className="过程体">
+        {属性.条们.map((条) => (
+          <div className="过程项" key={条.id}>
+            {条.思考 ? <div className="过程文">{条.思考}</div> : null}
+            {条.工具 ? (
+              <details className="过程工具">
+                <summary className="过程工具头">
+                  <图标 名="扳手" 大小={12} />
+                  <span>{条.文本}</span>
+                </summary>
+                <div className="过程工具体">
+                  <div className="折叠行">状态：{条.工具.状态}（第 {条.工具.轮次 ?? 1} 轮）</div>
+                  {条.工具.参数 && Object.keys(条.工具.参数).length > 0 ? (
+                    <div className="折叠行">参数：{JSON.stringify(条.工具.参数)}</div>
+                  ) : null}
+                  {typeof 条.工具.结果字数 === "number" ? <div className="折叠行">结果字数：{条.工具.结果字数}</div> : null}
+                  {条.工具.摘要 ? <div className="折叠行">摘要：{条.工具.摘要}</div> : null}
+                </div>
+              </details>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </details>
+  )
+}
+
+/** 归一后的显示项 → 渲染块：过程整块、普通消息按说话人合并。 */
+function 归渲染块(项们: 显示项[]): 消息组[] {
+  const 组们: 消息组[] = []
+  for (const 项 of 项们) {
+    if (项.类型 === "过程") {
+      组们.push({ 谁: "系统", 名: "", 条们: 项.条们, 过程: true })
+      continue
+    }
+    const 条 = 项.条
+    const 名 = 气泡名(条)
+    const 尾 = 组们[组们.length - 1]
+    if (尾 && !尾.过程 && 尾.谁 === 条.谁 && 尾.名 === 名 && !条.计划 && !条.提问) 尾.条们.push(条)
+    else 组们.push({ 谁: 条.谁, 名, 条们: [条] })
+  }
+  return 组们
 }
 
 function 归组(消息们: 对话条目[]): 消息组[] {
@@ -461,7 +520,7 @@ export function AI面板(属性: {
     }
   }
 
-  const 组们 = 归组(消息们)
+  const 组们 = 归渲染块(归显示项(消息们))
 
   const 画内容 = (条: 对话条目) => {
     if (条.计划) {
@@ -564,39 +623,7 @@ export function AI面板(属性: {
         </div>
       )
     }
-    if (条.工具) {
-      const 类 = 条.工具.状态 === "待确认" ? " 待确认" : 条.工具.状态 === "失败" ? " 失败" : 条.工具.状态 === "完成" ? " 完成" : ""
-      return (
-        <details className={"工具块" + 类}>
-          <summary className="折叠头">
-            <图标 名="扳手" 大小={14} />
-            <span className="折叠题">工具 · {条.文本}</span>
-          </summary>
-          <div className="折叠体">
-            <div className="折叠行">状态：{条.工具.状态}（第 {条.工具.轮次 ?? 1} 轮）</div>
-            {条.工具.参数 && Object.keys(条.工具.参数).length > 0 ? (
-              <div className="折叠行">参数：{JSON.stringify(条.工具.参数)}</div>
-            ) : null}
-            {typeof 条.工具.结果字数 === "number" ? <div className="折叠行">结果字数：{条.工具.结果字数}</div> : null}
-            {条.工具.摘要 ? <div className="折叠行">摘要：{条.工具.摘要}</div> : null}
-          </div>
-        </details>
-      )
-    }
-    return (
-      <>
-        {条.思考 ? (
-          <details className="思考块">
-            <summary className="折叠头">
-              <图标 名="笔" 大小={14} />
-              <span className="折叠题">思考 · {条.思考.replace(/\s/g, "").length} 字</span>
-            </summary>
-            <div className="折叠体 思考文">{条.思考}</div>
-          </details>
-        ) : null}
-        {条.文本 ? <div className="消息体">{条.文本}</div> : null}
-      </>
-    )
+    return <div className="消息体">{条.文本}</div>
   }
 
   return (
@@ -650,6 +677,13 @@ export function AI面板(属性: {
         {已压条数 > 0 ? <div className="对话提示 微信息">较早 {已压条数} 条已压缩</div> : null}
         {消息们.length === 0 ? <div className="空态" style={{ padding: 24 }}>{空态字[模式]}</div> : null}
         {组们.map((组, 组序) => {
+          if (组.过程) {
+            return (
+              <div key={"过程-" + 组序} className="过程行">
+                <过程卡 条们={组.条们} />
+              </div>
+            )
+          }
           const 我的 = 组.谁 === "你"
           const 显示名 = 组.名 !== 组.谁 ? 组.名 : ""
           return (

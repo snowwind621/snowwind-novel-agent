@@ -227,3 +227,79 @@ details[open] > .折叠头::before { transform: rotate(90deg); }
 }
 .提问自答 { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
 .提问自答 .工具输入 { flex: 1 1 auto; }
+
+/* —— 过程卡（参考 OpenFic 的对话区布局，实现自写） —— */
+.过程行 { display: flex; margin-top: 16px; }
+.过程卡 {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid var(--线淡);
+  border-radius: var(--卡圆角, 10px);
+  background: color-mix(in srgb, var(--底更浅) 55%, transparent);
+}
+.过程头 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--字弱);
+  font-size: 11.5px;
+}
+.过程头::-webkit-details-marker { display: none; }
+.过程题 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.过程箭 {
+  margin-left: auto;
+  width: 0;
+  height: 0;
+  border-left: 4px solid currentColor;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  transition: transform 0.12s ease;
+}
+details[open] > .过程头 .过程箭 { transform: rotate(90deg); }
+.过程卡.运行中 .过程题 { color: var(--主); }
+.过程卡.运行中 .过程头 .图标 { color: var(--主); }
+.流光 {
+  background: linear-gradient(90deg, var(--字弱) 0%, var(--主) 45%, var(--字弱) 90%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: 过程流光 1.6s linear infinite;
+}
+@keyframes 过程流光 {
+  to { background-position: -200% 0; }
+}
+/* 展开后正文左侧一条 1px 竖线，过程项挂在线上 */
+.过程体 {
+  margin: 0 10px 8px 16px;
+  padding-left: 10px;
+  border-left: 1px solid var(--线淡);
+}
+.过程项 { padding: 4px 0; }
+.过程文 {
+  color: var(--字弱);
+  font-size: 11.5px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+.过程工具头 {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  cursor: pointer;
+  list-style: none;
+  color: var(--字弱);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+.过程工具头::-webkit-details-marker { display: none; }
+.过程工具体 {
+  margin: 4px 0 0 8px;
+  padding-left: 8px;
+  border-left: 1px solid var(--线淡);
+}
