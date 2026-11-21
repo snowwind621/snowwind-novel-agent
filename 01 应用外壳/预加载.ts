@@ -22,7 +22,7 @@ contextBridge.exposeInMainWorld("桥", {
   导入旧书库: (旧根: string, 新根: string) => ipcRenderer.invoke(通道.书库导入, 旧根, 新根),
    台账一致性检查: (重新检查?: boolean) => ipcRenderer.invoke(通道.台账一致性, 重新检查),
    台账一致性补齐: (问题们?: unknown, 确认?: boolean) => ipcRenderer.invoke(通道.台账补齐, 问题们, 确认),
-   /** 一致性结果变了就回调（返回退订函数）：界面拿它刷状态字上的「⚠ N 处不一致」 */
+   /** 一致性结果变了就回调（返回退订函数）：界面拿它刷状态字上的「N 处不一致」 */
    监听一致性: (回调: (事件: { 问题数: number; 可补齐: number; 需裁定: number }) => void) => {
       const 监听 = (_: unknown, 载荷: { 问题数: number; 可补齐: number; 需裁定: number }) => 回调(载荷)
       ipcRenderer.on(推送事件.一致性变化, 监听)

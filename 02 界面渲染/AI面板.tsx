@@ -569,7 +569,7 @@ export function AI面板(属性: {
       return (
         <details className={"工具块" + 类}>
           <summary className="折叠头">
-            <图标 名="播放" 大小={14} />
+            <图标 名="扳手" 大小={14} />
             <span className="折叠题">工具 · {条.文本}</span>
           </summary>
           <div className="折叠体">
