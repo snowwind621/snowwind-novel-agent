@@ -1,17 +1,18 @@
 // 只负责一件事：中栏「数据」面板——左边分类导航，右边每类台账的专属界面（只读、手绘 SVG）。
 import React, { useEffect, useRef, useState } from "react"
 import { 桥, 千字 } from "./接口"
-import type { 知情结果, 看板数据, 项目摘要 } from "./接口"
+import type { 一致性报告, 一致性问题, 知情结果, 看板数据, 项目摘要 } from "./接口"
 import { 图标 } from "./图标"
 import type { 图标名 } from "./图标"
 import { 进度环, 字数柱, 伏笔甘特, 人物条, 时间轴, 关系网, 热力矩阵, 属性条 } from "./图表"
 import type { 章点, 伏笔条, 人物条项, 时间点, 关系边, 热力行 } from "./图表"
 import { 解析表格 } from "../10 书库检索/台账解析"
 
-type 分类 = "总览" | "时间线" | "人物" | "伏笔" | "关系" | "秘密" | "物品" | "队伍" | "出场"
+type 分类 = "总览" | "一致性" | "时间线" | "人物" | "伏笔" | "关系" | "秘密" | "物品" | "队伍" | "出场"
 
 const 分类们: Array<{ 名: 分类; 图标: 图标名; 说明: string }> = [
   { 名: "总览", 图标: "表格", 说明: "进度、字数节奏、伏笔概况" },
+  { 名: "一致性", 图标: "警告", 说明: "跨台账对不上的地方，能补的一键补" },
   { 名: "时间线", 图标: "列表", 说明: "日期 → 事件 → 章" },
   { 名: "人物", 图标: "用户群", 说明: "谁在场、谁久没露面、属性变化" },
   { 名: "伏笔", 图标: "灯泡", 说明: "埋与兑的生命周期" },
@@ -86,6 +87,10 @@ export function 视觉总览(属性: {
   切回编辑: () => void
   /** 看板/台账被外部刷新时 +1，用来强制重读台账文件 */
   版次?: number
+  /** 外部要求直接打开某一类（编辑器里的「一致性」提示会用它） */
+  分类请求?: string | null
+  /** 补齐台账之后让外面重读看板 */
+  刷新看板?: () => void
 }) {
   const [分类, set分类] = useState<分类>("总览")
   const [文件们, set文件们] = useState<Record<string, string>>({})
@@ -97,6 +102,11 @@ export function 视觉总览(属性: {
     return Number.isFinite(存) && 存 > 0 ? 存 : 0
   })
   const [知情数据, set知情数据] = useState<知情结果 | null>(null)
+  /** 跨台账一致性：面板第二类，也是产品承诺的兜底 */
+  const [一致, set一致] = useState<一致性报告 | null>(null)
+  const [一致筛, set一致筛] = useState<"全部" | "可补齐" | "需裁定">("全部")
+  const [补齐中, set补齐中] = useState(false)
+  const [补齐话, set补齐话] = useState("")
   const [提示, set提示] = useState<{ 左: number; 上: number; 文: string } | null>(null)
   const 壳 = useRef<HTMLDivElement | null>(null)
 
@@ -234,6 +244,77 @@ export function 视觉总览(属性: {
     }
   }, [属性.项目?.路径, 游标])
 
+  // 一致性：读一次 + 事件来了再读（补齐之后后端会推一次）
+  useEffect(() => {
+    if (!属性.项目) return
+    let 有效 = true
+    const 拉 = async () => {
+      const 取 = 桥.台账一致性检查
+      if (!取) return
+      try {
+        const 报告 = await 取()
+        if (有效) set一致(报告)
+      } catch {
+        if (有效) set一致(null)
+      }
+    }
+    void 拉()
+    const 卸 = 桥.监听一致性?.(() => void 拉())
+    return () => {
+      有效 = false
+      卸?.()
+    }
+  }, [属性.项目?.路径, 属性.版次])
+
+  // 外部（编辑器状态字）要求看某一类时切过去
+  useEffect(() => {
+    const 要 = 属性.分类请求
+    if (!要) return
+    if (分类们.some((项) => 项.名 === 要)) set分类(要 as 分类)
+  }, [属性.分类请求])
+
+  const 读完一致 = async () => {
+    const 取 = 桥.台账一致性检查
+    if (!取) return
+    try {
+      set一致(await 取())
+    } catch {
+      /* 读不到就保留旧值 */
+    }
+  }
+
+  /** 后端一次补齐「它当前清单里的全部可补齐」，所以单条按钮也是一次全补（会在结果里说清）。 */
+  const 补齐 = async (问题们: 一致性问题[]) => {
+    const 取 = 桥.台账一致性补齐
+    if (!取 || 问题们.length === 0) return
+    set补齐中(true)
+    set补齐话("正在补齐 " + 问题们.length + " 处…")
+    try {
+      const 结果 = await 取(true)
+      set补齐话(
+        (结果.成功 ? "已补齐 " + 问题们.length + " 处" : "补齐失败") +
+          (结果.说明 ? "：" + 结果.说明 : "") +
+          (结果.改动?.length ? "（" + 结果.改动.slice(0, 4).join("、") + "）" : ""),
+      )
+      await 读完一致()
+      属性.刷新看板?.()
+    } catch (错误: any) {
+      set补齐话("补齐失败：" + String(错误?.message ?? 错误))
+    } finally {
+      set补齐中(false)
+    }
+  }
+
+  const 全部补齐 = async () => {
+    const 目标 = (一致?.问题们 ?? []).filter((项) => 项.级别 === "可补齐")
+    if (目标.length === 0) return
+    const 册们 = Array.from(new Set(目标.map((项) => 项.册)))
+    const 行 =
+      "将修改 " + 册们.length + " 个台账文件（" + 册们.join("、") + "）并产生一个 Git 提交，可回滚。\n\n共 " + 目标.length + " 处，继续？"
+    if (!window.confirm(行)) return
+    await 补齐(目标)
+  }
+
   const 渲染面板 = () => {
     if (分类 === "总览") {
       return (
@@ -300,6 +381,87 @@ export function 视觉总览(属性: {
           {排序后.length === 0 ? <div className="数据空">这一类里没有伏笔</div> : (
             <div className="图滚"><伏笔甘特 伏笔们={排序后} 最新章节={游标} 悬停={悬停} 离开={() => set提示(null)} 点跳={(章) => 跳章(章)} /></div>
           )}
+        </div>
+      )
+    }
+
+    if (分类 === "一致性") {
+      if (!桥.台账一致性检查) {
+        return <div className="数据空">这个版本还没有接上一致性检查（桌面端预加载还没暴露）。</div>
+      }
+      const 全部 = 一致?.问题们 ?? []
+      const 筛后 = 全部.filter((项) => (一致筛 === "全部" ? true : 项.级别 === 一致筛))
+      return (
+        <div className="数据块">
+          <div className="数据块头">
+            <span>一致性</span>
+            <span>跨台账对不上的地方 · 补齐只动台账文件，能回滚</span>
+          </div>
+          <div className="一致数行">
+            <button
+              className={"一致数" + (一致筛 === "可补齐" ? " 选中" : "")}
+              onClick={() => set一致筛(一致筛 === "可补齐" ? "全部" : "可补齐")}
+              title="点一下只看能自动补的"
+            >
+              可补齐 <b>{一致?.可补齐 ?? 0}</b>
+            </button>
+            <button
+              className={"一致数 需" + (一致筛 === "需裁定" ? " 选中" : "")}
+              onClick={() => set一致筛(一致筛 === "需裁定" ? "全部" : "需裁定")}
+              title="点一下只看要你自己定的"
+            >
+              需裁定 <b>{一致?.需裁定 ?? 0}</b>
+            </button>
+            <button
+              className="一致全补"
+              onClick={() => void 全部补齐()}
+              disabled={补齐中 || (一致?.可补齐 ?? 0) === 0}
+              title="逐个确认会太慢，这里一次补完（会让你再确认一次）"
+            >
+              全部补齐（{一致?.可补齐 ?? 0}）
+            </button>
+          </div>
+          {补齐话 ? <div className="一致结果">{补齐话}</div> : null}
+          {全部.length === 0 ? <div className="数据空">台账之间没有对不上的地方</div> : null}
+          {全部.length > 0 && 筛后.length === 0 ? <div className="数据空">这个筛法下没有条目</div> : null}
+          {筛后.map((项, 序) => (
+            <div key={序} className={"一致卡 " + (项.级别 === "可补齐" ? "可补" : "需裁")}>
+              <div className="一致卡头">
+                <span className="一致规则">{项.规则}</span>
+                <span className={"徽 " + (项.级别 === "可补齐" ? "" : "超期")}>{项.级别}</span>
+              </div>
+              <div className="一致卡元">
+                <button className="章链" onClick={() => 属性.打开文件(项.册)} title={"打开 " + 项.册}>
+                  {项.册}
+                </button>
+                {项.章号 ? (
+                  <button className="章链" onClick={() => 跳章(项.章号 ?? 1)} title={"回到 ch" + 项.章号}>
+                    {"ch" + 项.章号}
+                  </button>
+                ) : null}
+              </div>
+              <div className="一致说明">{项.说明}</div>
+              {项.候选 && 项.候选.length > 0 ? (
+                <div className="一致候选">
+                  候选：
+                  {项.候选.map((选, 位) => (
+                    <span key={位}>
+                      {选.目标}
+                      {选.行 ? "（" + 选.行 + "）" : ""}
+                      {位 < (项.候选?.length ?? 0) - 1 ? "、" : ""}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+              {项.级别 === "可补齐" ? (
+                <button className="一致补" onClick={() => void 补齐([项])} disabled={补齐中} title="就改这一处">
+                  ✓ 补齐
+                </button>
+              ) : (
+                <div className="一致提示">这条要你自己决定怎么改</div>
+              )}
+            </div>
+          ))}
         </div>
       )
     }

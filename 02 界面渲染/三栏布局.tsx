@@ -321,6 +321,51 @@ export function 三栏布局() {
     return 卸
   }, [])
 
+  /** 一致性：状态字上那个「⚠ N 处不一致」的数字 */
+  const [不一致数, set不一致数] = useState(0)
+  const [分类请求, set分类请求] = useState<string | null>(null)
+  useEffect(() => {
+    const 取 = 桥.台账一致性检查
+    if (!取) return
+    let 有效 = true
+    const 拉 = async () => {
+      try {
+        const 报告 = await 取()
+        if (有效) set不一致数(报告.问题数)
+      } catch {
+        /* 拿不到就先不提示 */
+      }
+    }
+    void 拉()
+    // 开窗那一刻书库可能还没装载完，1.5 秒后再补一次，别让状态字一直显示「✓」
+    const 补 = window.setTimeout(() => void 拉(), 1500)
+    const 计 = window.setInterval(() => void 拉(), 5000)
+    const 卸 = 桥.监听一致性?.((事件) => {
+      if (有效) set不一致数(事件.问题数)
+    })
+    return () => {
+      有效 = false
+      window.clearTimeout(补)
+      window.clearInterval(计)
+      卸?.()
+    }
+  }, [项目?.路径])
+
+  /** 补齐之后重读看板：数据面板的数字跟着变。 */
+  const 刷新看板 = async () => {
+    try {
+      set看板(await 桥.读取看板())
+    } catch {
+      /* 读不到就等下一次事件 */
+    }
+    set看板版次((旧) => 旧 + 1)
+  }
+
+  const 去一致性 = () => {
+    set分类请求("一致性")
+    set中栏视图("全书")
+  }
+
   const 改页 = (id: string, 补丁: Partial<页签>) =>
     set页签们((旧) => 旧.map((页) => (页.id === id ? { ...页, ...补丁 } : 页)))
 
@@ -656,6 +701,8 @@ export function 三栏布局() {
             打开文件={(相对路径: string) => void 打开文件(相对路径)}
             切回编辑={() => set中栏视图("编辑")}
             版次={看板版次}
+            分类请求={分类请求}
+            刷新看板={() => void 刷新看板()}
           />
         ) : (
         <正文编辑
@@ -675,6 +722,8 @@ export function 三栏布局() {
           提示字={状态字}
           章节号={章节号}
           静置秒={设定?.台账.静置秒 ?? 20}
+          不一致数={不一致数}
+          去一致性={去一致性}
           切总览={() => set中栏视图("全书")}
         />
         )}

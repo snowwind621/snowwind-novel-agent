@@ -68,8 +68,21 @@ const 工具按钮们: Array<{ 名: string; 说明: string; 图标: 图标名; �
 ]
 
 /** 撤销栈：按标签各存一份，只存「已提交的改动」。 */
-const 栈深 = 100
+const 栈深兜底 = 100
 const 默认提交延迟 = 1200
+
+/** 设置里的「编辑器.撤回栈深度」；越界或没读到就退回兜底值（设置存储已夹在 10~500）。 */
+export function 取撤回深度(值?: number): number {
+  const 数 = Math.round(Number(值))
+  if (!Number.isFinite(数) || 数 < 1) return 栈深兜底
+  return Math.min(500, 数)
+}
+
+/** 往栈尾压一步；超过深度就从最老的一端丢——「最多只能撤 N 步」就落在这里。 */
+export function 裁栈(栈: string[], 深度: number): string[] {
+  const 深 = 取撤回深度(深度)
+  return 栈.length <= 深 ? 栈 : 栈.slice(栈.length - 深)
+}
 
 function 现在是(): string {
   const 日 = new Date()
@@ -95,6 +108,10 @@ export function 正文编辑(属性: {
   章节号?: number | null
   /** 静置秒（设置里的「台账.静置秒」），只用来写「N 秒后自动跑」 */
   静置秒?: number
+  /** 跨台账不一致的条数（0 就显示「一致性 ✓」） */
+  不一致数?: number
+  /** 点提示跳到数据面板的一致性分类 */
+  去一致性?: () => void
 }) {
   const { 已开书库, 标签们, 当前标签, 切标签, 关标签, 标题, 正文, 改, 保存, 提示字, 自动保存毫秒 } = 属性
   const 提交延迟 = Math.max(200, 自动保存毫秒 ?? 默认提交延迟)
@@ -104,6 +121,9 @@ export function 正文编辑(属性: {
   const 上次标签 = useRef("")
   const 提交计时 = useRef<number | null>(null)
   const 历史表 = useRef(new Map<string, { 栈: string[]; 位: number }>())
+  /** 撤回深度：进标签时读一次设置存进 ref，绝不在渲染里读设置文件（每敲一个字都读会把磁盘敲坏） */
+  const [撤回深度, set撤回深度] = useState(栈深兜底)
+  const 深度引用 = useRef(栈深兜底)
   const [保存状态, set保存状态] = useState("")
   const [可撤回, set可撤回] = useState(false)
   const [可重做, set可重做] = useState(false)
@@ -143,6 +163,32 @@ export function 正文编辑(属性: {
   useEffect(() => {
     刷新按钮()
   }, [当前标签, 正文])
+
+  // 撤回深度：只在进标签时读一次设置。改完设置切一下标签就生效，旧的超长栈会按新深度砍掉。
+  useEffect(() => {
+    let 还在 = true
+    void 桥
+      .读取设置()
+      .then((设) => {
+        if (!还在) return
+        const 深 = 取撤回深度(设?.编辑器?.撤回栈深度)
+        深度引用.current = 深
+        set撤回深度(深)
+        for (const 记 of 历史表.current.values()) {
+          if (记.栈.length <= 深) continue
+          const 丢 = 记.栈.length - 深
+          记.栈 = 记.栈.slice(丢)
+          记.位 = Math.max(0, Math.min(记.位 - 丢, 记.栈.length - 1))
+        }
+        刷新按钮()
+      })
+      .catch(() => {
+        /* 读不到设置就按兜底深度走，不影响写作 */
+      })
+    return () => {
+      还在 = false
+    }
+  }, [当前标签])
 
   useEffect(() => {
     void 桥
@@ -259,7 +305,7 @@ export function 正文编辑(属性: {
     const 文 = 最新正文.current
     const 记 = 当前历史()
     if (记.栈[记.位] !== 文) {
-      记.栈 = [...记.栈.slice(0, 记.位 + 1), 文].slice(-栈深)
+      记.栈 = 裁栈([...记.栈.slice(0, 记.位 + 1), 文], 深度引用.current)
       记.位 = 记.栈.length - 1
       刷新按钮()
     }
@@ -616,6 +662,19 @@ export function 正文编辑(属性: {
             ) : null}
             {台账详情开 && 台账明细 ? <span className="台账详情">{台账明细}</span> : null}
           </>
+        ) : null}
+        {属性.去一致性 ? (
+          (属性.不一致数 ?? 0) > 0 ? (
+            <button className="一致提醒 有" onClick={属性.去一致性} title="去数据面板的「一致性」分类看">
+              <图标 名="警告" 大小={13} />
+              {属性.不一致数} 处不一致
+            </button>
+          ) : (
+            <span className="一致提醒 好" title="台账之间没有对不上的地方">
+              <图标 名="勾" 大小={13} />
+              一致性 ✓
+            </span>
+          )
         ) : null}
         <span className="保存状态" title="每改一次自动保存">{保存状态}</span>
       </div>
