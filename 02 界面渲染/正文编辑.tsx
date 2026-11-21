@@ -2,7 +2,8 @@
 import React, { useEffect, useRef, useState } from "react"
 import { 渲染Markdown, 取回Markdown } from "./编辑器渲染"
 import "./编辑器样式.css"
-import { 桥 } from "./接口"
+import { 桥, 时刻 } from "./接口"
+import type { 自动同步状态, 自动同步上次 } from "./接口"
 import { 视图切换 } from "./视觉总览"
 import { 图标 } from "./图标"
 import type { 图标名 } from "./图标"
@@ -90,6 +91,10 @@ export function 正文编辑(属性: {
   自动保存毫秒?: number
   提示字?: string
   切总览?: () => void
+  /** 当前章号：台账状态只关心这一章 */
+  章节号?: number | null
+  /** 静置秒（设置里的「台账.静置秒」），只用来写「N 秒后自动跑」 */
+  静置秒?: number
 }) {
   const { 已开书库, 标签们, 当前标签, 切标签, 关标签, 标题, 正文, 改, 保存, 提示字, 自动保存毫秒 } = 属性
   const 提交延迟 = Math.max(200, 自动保存毫秒 ?? 默认提交延迟)
@@ -105,6 +110,9 @@ export function 正文编辑(属性: {
   /** 书库还没进 Git 时，改动没法回滚——在工具行右端提醒并提供一键初始化 */
   const [git状态, setGit状态] = useState<{ 有项目: boolean; 是Git仓库: boolean } | null>(null)
   const [初始化中, set初始化中] = useState(false)
+  /** 这一章的台账自动同步状态（轮询 + 推送，两条都走） */
+  const [台账, set台账] = useState<自动同步状态 | null>(null)
+  const [台账详情开, set台账详情开] = useState(false)
   /** 防抖定时器里拿到的是旧闭包，所以「当前正文 / 保存函数」走 ref，永远读最新值 */
   const 最新正文 = useRef(正文)
   const 最新保存 = useRef(保存)
@@ -142,6 +150,71 @@ export function 正文编辑(属性: {
       .then((状态) => setGit状态(状态))
       .catch(() => setGit状态(null))
   }, [已开书库])
+
+  // 台账状态：有推送就立刻刷，没推送就 3 秒轮询兜底；只盯当前章。
+  useEffect(() => {
+    const 章 = 属性.章节号 ?? null
+    if (!章) {
+      set台账(null)
+      return
+    }
+    let 还有效 = true
+    const 拉 = async () => {
+      try {
+        const 状态 = await 桥.台账自动状态()
+        if (还有效) set台账(状态)
+      } catch {
+        /* 状态拿不到就等下一轮，不打断写作 */
+      }
+    }
+    void 拉()
+    const 计时 = window.setInterval(() => void 拉(), 3000)
+    const 卸 = 桥.监听自动同步((事件) => {
+      if (事件.章号 === 章) void 拉()
+    })
+    return () => {
+      还有效 = false
+      window.clearInterval(计时)
+      卸()
+    }
+  }, [属性.章节号])
+
+  const 本章上次: 自动同步上次 | undefined = 属性.章节号 ? 台账?.上次?.[String(属性.章节号)] : undefined
+  const 台账在跑 = Boolean(属性.章节号 && (台账?.正在跑 ?? []).includes(属性.章节号))
+  const 台账待 = Boolean(属性.章节号 && (台账?.待同步 ?? []).includes(属性.章节号))
+  const 台账失败 = Boolean(本章上次 && !本章上次.成功 && !台账在跑)
+  const 台账类 = 台账在跑 ? " 跑" : 台账失败 ? " 败" : 台账待 ? " 待" : " 好"
+  const 台账字 = !属性.章节号
+    ? ""
+    : 台账在跑
+      ? "台账 ch" + 属性.章节号 + " · 同步中…"
+      : 台账失败
+        ? "台账 ch" + 属性.章节号 + " · 同步失败：" + (本章上次?.说明 ?? "未知原因")
+        : 本章上次
+          ? "台账 ch" + 属性.章节号 + " · 已同步 " + 时刻(本章上次.时刻)
+          : 台账待
+            ? "台账 ch" + 属性.章节号 + " · 待同步（" + (属性.静置秒 ?? 20) + " 秒后自动跑）"
+            : "台账 ch" + 属性.章节号 + " · 未同步"
+  const 台账明细 = 本章上次
+    ? "上次同步：" +
+      (本章上次.用时毫秒 ? "用时 " + (本章上次.用时毫秒 / 1000).toFixed(1) + " 秒 · " : "") +
+      (本章上次.用量 ? "输入 " + 本章上次.用量.输入 + " / 输出 " + 本章上次.用量.输出 + " token" : "没记用量")
+    : ""
+
+  const 台账重试 = async () => {
+    const 章 = 属性.章节号
+    if (!章) return
+    try {
+      await 桥.台账立即同步(章)
+    } catch {
+      /* 失败原因会从状态里读回来 */
+    }
+    try {
+      set台账(await 桥.台账自动状态())
+    } catch {
+      /* 忽略 */
+    }
+  }
 
   const 初始化Git = async () => {
     set初始化中(true)
@@ -524,6 +597,24 @@ export function 正文编辑(属性: {
             <button className="小按钮" onClick={() => void 初始化Git()} disabled={初始化中} title="在这本书里建一个 Git 仓库，之后每次写入都会自动提交">
               {初始化中 ? "初始化中…" : "初始化"}
             </button>
+          </>
+        ) : null}
+        {台账字 ? (
+          <>
+            <span
+              className={"台账状态" + 台账类}
+              title={台账明细 || 台账字}
+              onClick={() => set台账详情开((旧) => !旧)}
+            >
+              {台账在跑 ? <span className="台账转圈" aria-hidden="true" /> : null}
+              {台账字}
+            </span>
+            {台账失败 ? (
+              <button className="小按钮 台账重试" onClick={() => void 台账重试()} title="现在就跑一次（不用等静置）">
+                立即重试
+              </button>
+            ) : null}
+            {台账详情开 && 台账明细 ? <span className="台账详情">{台账明细}</span> : null}
           </>
         ) : null}
         <span className="保存状态" title="每改一次自动保存">{保存状态}</span>

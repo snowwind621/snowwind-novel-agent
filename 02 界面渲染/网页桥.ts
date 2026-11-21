@@ -1,6 +1,6 @@
 // 只负责一件事：在没有 Electron 外壳时，用 HTTP 把界面接到同一个处理器上。
 import type { 项目摘要, 看板数据, 设置, 对话请求, 续写请求, 改写请求 } from "../03 进程桥接/通道"
-import type { 知情结果 } from "./接口"
+import type { 知情结果, 自动同步状态, 自动同步进度, 同步结果 } from "./接口"
 import type { 桥接口, 对话事件, 派活进度 } from "./接口"
 
 async function 调用(方法: string, ...参数: unknown[]): Promise<any> {
@@ -83,6 +83,39 @@ export function 创建网页桥(): 桥接口 {
     书库写文件: (相对路径: string, 内容: string) => 调用("书库/写文件", 相对路径, 内容),
     查知情: (秘密?: string, 人?: string, 截至章?: number) =>
       调用("书库/查知情", 秘密 ?? "", 人 ?? "", 截至章 ?? 0) as Promise<知情结果>,
+    台账自动状态: () => 调用("台账/自动状态") as Promise<自动同步状态>,
+    台账立即同步: (章节号: number) => 调用("台账/立即同步", 章节号) as Promise<同步结果>,
+    /** 浏览器预览没有 SSE 推送：轮询状态并在「正在跑 / 上次结果」变化时合成事件 */
+    监听自动同步: (回调: (事件: 自动同步进度) => void) => {
+      let 停 = false
+      let 上次跑 = new Set<number>()
+      let 上次签 = ""
+      const 看 = async () => {
+        if (停) return
+        try {
+          const 状态 = (await 调用("台账/自动状态")) as 自动同步状态
+          const 跑 = new Set(状态.正在跑 ?? [])
+          for (const 章号 of 跑) if (!上次跑.has(章号)) 回调({ 章号, 阶段: "开始", 说明: "开始同步" })
+          for (const 章号 of 上次跑) {
+            if (跑.has(章号)) continue
+            const 上次 = 状态.上次?.[String(章号)]
+            if (!上次) continue
+            回调({ 章号, 阶段: 上次.成功 ? "完成" : "失败", 说明: 上次.说明, 用量: 上次.用量 })
+          }
+          上次跑 = 跑
+          上次签 = JSON.stringify(状态.上次 ?? {})
+        } catch {
+          /* 状态拿不到就等下一轮 */
+        }
+      }
+      const 计时 = window.setInterval(() => void 看(), 1500)
+      void 看()
+      return () => {
+        停 = true
+        window.clearInterval(计时)
+        void 上次签
+      }
+    },
     书库Git状态: () => 调用("书库/Git状态"),
     初始化书库Git: () => 调用("书库/初始化Git"),
     书架: () => 调用("书架/读取"),

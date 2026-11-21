@@ -1111,6 +1111,36 @@ body.拖宽中 { cursor: col-resize; user-select: none; }
 .面板体 > * { margin-right: 12px; }
 .流 { padding-right: 0; }
 .流 > * { margin-right: 12px; }
+
+/* —— 台账自动同步状态（编辑器工具行右侧） —— */
+.台账状态 {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 2px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  color: var(--字弱);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.台账状态:hover { color: var(--字); }
+.台账状态.待 { color: var(--警); }
+.台账状态.跑 { color: var(--主); }
+.台账状态.败 { color: var(--危); }
+.台账转圈 {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  animation: 台账转 0.9s linear infinite;
+}
+@keyframes 台账转 {
+  to { transform: rotate(360deg); }
+}
+.台账重试 { margin-left: 6px; }
+.台账详情 { margin-left: 8px; color: var(--字弱); font-size: 11px; white-space: nowrap; }
 .图滚 { padding-right: 0; }
 
 /* 正文纸面：滚动容器铺满中栏，最大行宽给内层 */

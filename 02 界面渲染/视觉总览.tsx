@@ -84,6 +84,8 @@ export function 视觉总览(属性: {
   看板: 看板数据 | null
   打开文件: (相对路径: string) => void
   切回编辑: () => void
+  /** 看板/台账被外部刷新时 +1，用来强制重读台账文件 */
+  版次?: number
 }) {
   const [分类, set分类] = useState<分类>("总览")
   const [文件们, set文件们] = useState<Record<string, string>>({})
@@ -122,7 +124,7 @@ export function 视觉总览(属性: {
     return () => {
       有效 = false
     }
-  }, [属性.项目?.路径])
+  }, [属性.项目?.路径, 属性.版次])
 
   const 悬停 = (水平: number, 垂直: number, 文: string) => {
     const 框 = 壳.current?.getBoundingClientRect()
