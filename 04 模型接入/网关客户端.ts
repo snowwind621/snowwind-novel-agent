@@ -62,6 +62,8 @@ export interface 流式参数 extends 调用策略 {
   工具?: 工具声明[]
   工具选择?: "auto" | "none"
   信号?: AbortSignal
+  /** 思考强度：映射成 reasoning_effort；网关不认这个字段会自动去掉再试 */
+  思考强度?: "低" | "中" | "高"
   /** 「用量」的文本是一段 JSON（用量 结构），上层原样往下传即可 */
   回调: (类型: "思考" | "正文" | "用量", 文本: string) => void
 }
@@ -172,12 +174,15 @@ export async function 拉模型清单(基址: string, 密钥: string, 超时秒 
   return 列表.map((项: any) => String(项?.id ?? "")).filter(Boolean)
 }
 
-function 请求体(参数: 流式参数, 带用量: boolean, 带工具: boolean, 模型: string): string {
+const 强度映射: Record<string, string> = { 低: "low", 中: "medium", 高: "high" }
+
+function 请求体(参数: 流式参数, 带用量: boolean, 带工具: boolean, 带思考: boolean, 模型: string): string {
   return JSON.stringify({
     model: 模型,
     messages: 参数.消息,
     stream: true,
     ...(带用量 ? { stream_options: { include_usage: true } } : {}),
+    ...(带思考 && 参数.思考强度 ? { reasoning_effort: 强度映射[参数.思考强度] ?? "medium" } : {}),
     ...(带工具 && 参数.工具 && 参数.工具.length > 0 ? { tools: 参数.工具, tool_choice: 参数.工具选择 ?? "auto" } : {}),
     temperature: 参数.温度 ?? 策略兜底.温度,
     max_tokens: 参数.最大词元 ?? 策略兜底.最大词元,
@@ -185,11 +190,11 @@ function 请求体(参数: 流式参数, 带用量: boolean, 带工具: boolean,
 }
 
 /** 发一次；超时/连接失败/5xx 由外层决定要不要重试。 */
-async function 发一次(参数: 流式参数, 带用量: boolean, 带工具: boolean, 尝试: 一次尝试, 模型: string): Promise<Response> {
+async function 发一次(参数: 流式参数, 带用量: boolean, 带工具: boolean, 带思考: boolean, 尝试: 一次尝试, 模型: string): Promise<Response> {
   return fetch(参数.基址.replace(/\/$/, "") + "/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: "Bearer " + 参数.密钥 },
-    body: 请求体(参数, 带用量, 带工具, 模型),
+    body: 请求体(参数, 带用量, 带工具, 带思考, 模型),
     signal: 尝试.信号,
   })
 }
@@ -220,7 +225,7 @@ interface 发请求结果 {
   模型: string
 }
 
-async function 发请求(参数: 流式参数, 带用量: boolean, 带工具: boolean): Promise<发请求结果> {
+async function 发请求(参数: 流式参数, 带用量: boolean, 带工具: boolean, 带思考: boolean): Promise<发请求结果> {
   const 重试次数 = Math.max(0, Math.floor(参数.重试次数 ?? 策略兜底.重试次数))
   const 超时秒 = 参数.超时秒 ?? 策略兜底.超时秒
   const 间隔 = Math.max(0, 参数.重试间隔秒 ?? 策略兜底.重试间隔秒) * 1000
@@ -231,7 +236,7 @@ async function 发请求(参数: 流式参数, 带用量: boolean, 带工具: bo
     用过 = 模型
     const 尝试 = 组一次尝试(超时秒, 参数.信号)
     try {
-      const 响应 = await 发一次(参数, 带用量, 带工具, 尝试, 模型)
+      const 响应 = await 发一次(参数, 带用量, 带工具, 带思考, 尝试, 模型)
       if (响应.ok || !可重试状态(响应.status)) return { 响应, 模型 }
       最后错误 = new Error("网关返回 " + 响应.status + "（模型 " + 模型 + "）")
     } catch (错误: any) {
@@ -253,10 +258,14 @@ async function 发请求(参数: 流式参数, 带用量: boolean, 带工具: bo
  */
 async function 建连(参数: 流式参数): Promise<{ 响应: Response; 工具被拒: boolean; 模型: string }> {
   const 带工具 = Boolean(参数.工具 && 参数.工具.length > 0) && 参数.工具选择 !== "none"
-  let 结果 = await 发请求(参数, true, 带工具)
-  if (结果.响应.status === 400 || 结果.响应.status === 422) 结果 = await 发请求(参数, false, 带工具)
-  if ((结果.响应.status === 400 || 结果.响应.status === 422) && 带工具) {
-    结果 = await 发请求(参数, false, false)
+  const 带思考 = Boolean(参数.思考强度)
+  const 是坏参数 = (状态: number) => 状态 === 400 || 状态 === 422
+  let 结果 = await 发请求(参数, true, 带工具, 带思考)
+  if (是坏参数(结果.响应.status)) 结果 = await 发请求(参数, false, 带工具, 带思考)
+  // 有的网关不认 reasoning_effort：去掉再试一次，不能因为「思考强度」把整轮打挂
+  if (是坏参数(结果.响应.status) && 带思考) 结果 = await 发请求(参数, false, 带工具, false)
+  if (是坏参数(结果.响应.status) && 带工具) {
+    结果 = await 发请求(参数, false, false, false)
     return { 响应: 结果.响应, 工具被拒: true, 模型: 结果.模型 }
   }
   return { 响应: 结果.响应, 工具被拒: false, 模型: 结果.模型 }
