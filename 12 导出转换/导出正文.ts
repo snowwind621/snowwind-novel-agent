@@ -237,8 +237,18 @@ function 导EPUB(书名: string, 章们: 章[]): 成品 {
   return { 文件名: 书名安全(书名) + ".epub", 数据 }
 }
 
+/** 设置里存的是 "markdown"，界面上给的是 "md"；两边的叫法都在这里归一到文件名后缀。 */
+export function 归一导出格式(格式: string): string {
+  const 净 = String(格式 ?? "").trim().toLowerCase()
+  if (净 === "markdown" || 净 === "md") return "md"
+  if (净 === "txt" || 净 === "text" || 净 === "纯文本") return "txt"
+  if (净 === "docx" || 净 === "word") return "docx"
+  if (净 === "epub" || 净 === "epub3") return "epub"
+  return 净
+}
+
 export function 生成导出(格式: string, 书名: string, 章们: 章[]): 成品 {
-  switch (格式) {
+  switch (归一导出格式(格式)) {
     case "txt":
       return 导TXT(书名, 章们)
     case "md":

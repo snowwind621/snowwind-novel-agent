@@ -3,6 +3,23 @@
 /** 界面上一条消息的最小形状；只认文本，不关心 UI 字段。 */
 export interface 对话条 { 谁: string; 文本: string }
 
+/** 设置里跟摘要有关的那两小块；只收会用到的字段，别的地方传什么形状都能进来。 */
+export interface 摘要设置来源 {
+  上下文?: { 摘要模型?: string }
+  模型?: { 分工?: { 助手?: string } }
+}
+
+/**
+ * 摘要用哪个模型：设置里填了就用它，留空回落到「助手」分工。
+ * 摘要模型填错也不至于让对话压不了——调用方拿到的永远是能用的模型名。
+ */
+export function 取摘要模型(设置: 摘要设置来源 | null | undefined, 兜底 = ""): string {
+  const 指定 = String(设置?.上下文?.摘要模型 ?? "").trim()
+  if (指定) return 指定
+  const 助手 = String(设置?.模型?.分工?.助手 ?? "").trim()
+  return 助手 || 兜底
+}
+
 export interface 压缩配置 {
   历史保留条数: number
   /** 0.3 ~ 1：估算用量到这个比例就开始压 */

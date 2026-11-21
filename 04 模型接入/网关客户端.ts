@@ -2,6 +2,13 @@
 
 import type { 用量 } from "../03 进程桥接/通道"
 
+/** 失败换模型：开关开着时，重试会按「分工顺序」往后挪一个模型（总编→执笔→审校→助手）。 */
+export interface 换模型设置 {
+  开关: boolean
+  /** 分工模型按角色排好的顺序；重复的模型会被去掉（四个人配同一个模型时没得换） */
+  顺序: string[]
+}
+
 /** 一次调用的策略：全部可选，调用方没给就用这里的兜底值。 */
 export interface 调用策略 {
   /** 单次请求的硬超时（秒）；到点就中断，并按「重试次数」决定要不要再来一次 */
@@ -10,6 +17,8 @@ export interface 调用策略 {
   重试间隔秒?: number
   温度?: number
   最大词元?: number
+  /** 设置里的「模型.失败换模型」；由 取调用策略 从设置翻出来 */
+  换模型?: 换模型设置
 }
 
 /** 一条对话消息；带工具调用时 assistant 消息会挂 tool_calls，工具结果用 role=tool 回去。 */
@@ -38,6 +47,10 @@ export interface 流式结果 {
   工具调用: 工具调用[]
   /** 网关不认 tools 字段（400/422）时置真：上层要退化到「约定 JSON 块」 */
   工具被拒: boolean
+  /** 这次真正发出请求用的模型；失败换模型生效时它不是入参那个 */
+  模型: string
+  /** 这次有没有因为失败换过模型（用于界面/日志说明） */
+  换过模型: boolean
 }
 
 export interface 流式参数 extends 调用策略 {
@@ -53,22 +66,37 @@ export interface 流式参数 extends 调用策略 {
   回调: (类型: "思考" | "正文" | "用量", 文本: string) => void
 }
 
-export const 策略兜底 = { 超时秒: 120, 重试次数: 0, 重试间隔秒: 0, 温度: 0.9, 最大词元: 4096 }
+export const 策略兜底 = { 超时秒: 120, 重试次数: 0, 重试间隔秒: 0, 温度: 0.9, 最大词元: 4096, 换模型: { 开关: false, 顺序: [] } as 换模型设置 }
 
-/** 把设置里的「模型」组翻成调用策略；调用方 spread 进参数即可，显式传的字段优先。 */
+/** 分工角色从「主力」到「兜底」的顺序：失败换模型就按这个往后挪。 */
+export const 分工顺序 = ["总编", "执笔", "审校", "助手"] as const
+
+/**
+ * 把设置里的「模型」组翻成调用策略；调用方 spread 进参数即可，显式传的字段优先。
+ * 注意：调用方传的是整个「模型」组（不是只手挑几个字段），所以「失败换模型 + 分工」也一起翻出来。
+ */
 export function 取调用策略(模型: {
   超时秒?: number
   重试次数?: number
   重试间隔秒?: number
   温度?: number
   最大输出词元?: number
+  失败换模型?: boolean
+  分工?: Record<string, string>
 }): 调用策略 {
+  const 分工 = 模型.分工 ?? {}
+  const 顺序: string[] = []
+  for (const 角色 of 分工顺序) {
+    const 名 = String(分工[角色] ?? "").trim()
+    if (名 && !顺序.includes(名)) 顺序.push(名)
+  }
   return {
     超时秒: 模型.超时秒,
     重试次数: 模型.重试次数,
     重试间隔秒: 模型.重试间隔秒,
     温度: 模型.温度,
     最大词元: 模型.最大输出词元,
+    换模型: { 开关: Boolean(模型.失败换模型), 顺序 },
   }
 }
 
@@ -144,9 +172,9 @@ export async function 拉模型清单(基址: string, 密钥: string, 超时秒 
   return 列表.map((项: any) => String(项?.id ?? "")).filter(Boolean)
 }
 
-function 请求体(参数: 流式参数, 带用量: boolean, 带工具: boolean): string {
+function 请求体(参数: 流式参数, 带用量: boolean, 带工具: boolean, 模型: string): string {
   return JSON.stringify({
-    model: 参数.模型,
+    model: 模型,
     messages: 参数.消息,
     stream: true,
     ...(带用量 ? { stream_options: { include_usage: true } } : {}),
@@ -157,13 +185,28 @@ function 请求体(参数: 流式参数, 带用量: boolean, 带工具: boolean)
 }
 
 /** 发一次；超时/连接失败/5xx 由外层决定要不要重试。 */
-async function 发一次(参数: 流式参数, 带用量: boolean, 带工具: boolean, 尝试: 一次尝试): Promise<Response> {
+async function 发一次(参数: 流式参数, 带用量: boolean, 带工具: boolean, 尝试: 一次尝试, 模型: string): Promise<Response> {
   return fetch(参数.基址.replace(/\/$/, "") + "/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: "Bearer " + 参数.密钥 },
-    body: 请求体(参数, 带用量, 带工具),
+    body: 请求体(参数, 带用量, 带工具, 模型),
     signal: 尝试.信号,
   })
+}
+
+/**
+ * 这一轮该用哪个模型：第 0 轮永远是入参那个；
+ * 之后每失败一次，按分工顺序往后挪一位（走到最后一个就停在最后一个，不会绕回去）。
+ */
+function 本轮模型(参数: 流式参数, 轮: number): string {
+  const 换 = 参数.换模型
+  const 原模型 = String(参数.模型 ?? "").trim()
+  if (!换 || !换.开关 || 轮 <= 0) return 原模型
+  const 顺序 = [...new Set(换.顺序.map((项) => String(项 ?? "").trim()).filter(Boolean))]
+  if (顺序.length === 0) return 原模型
+  const 原位 = 顺序.indexOf(原模型)
+  const 目标 = 原位 < 0 ? Math.min(轮, 顺序.length - 1) : Math.min(原位 + 轮, 顺序.length - 1)
+  return 顺序[目标] ?? 原模型
 }
 
 /**
@@ -171,20 +214,29 @@ async function 发一次(参数: 流式参数, 带用量: boolean, 带工具: bo
  * 只重试「超时 / 连接失败 / 5xx」；用户自己按了停止（外部信号）立刻放弃。
  * 已经吐字之后不再重试——那在下面的读流阶段，不经过这里。
  */
-async function 发请求(参数: 流式参数, 带用量: boolean, 带工具: boolean): Promise<Response> {
+interface 发请求结果 {
+  响应: Response
+  /** 真正用到的模型（失败换模型生效时可能已经换过） */
+  模型: string
+}
+
+async function 发请求(参数: 流式参数, 带用量: boolean, 带工具: boolean): Promise<发请求结果> {
   const 重试次数 = Math.max(0, Math.floor(参数.重试次数 ?? 策略兜底.重试次数))
   const 超时秒 = 参数.超时秒 ?? 策略兜底.超时秒
   const 间隔 = Math.max(0, 参数.重试间隔秒 ?? 策略兜底.重试间隔秒) * 1000
   let 最后错误: any = null
+  let 用过 = String(参数.模型 ?? "")
   for (let 轮 = 0; 轮 <= 重试次数; 轮++) {
+    const 模型 = 本轮模型(参数, 轮)
+    用过 = 模型
     const 尝试 = 组一次尝试(超时秒, 参数.信号)
     try {
-      const 响应 = await 发一次(参数, 带用量, 带工具, 尝试)
-      if (响应.ok || !可重试状态(响应.status)) return 响应
-      最后错误 = new Error("网关返回 " + 响应.status)
+      const 响应 = await 发一次(参数, 带用量, 带工具, 尝试, 模型)
+      if (响应.ok || !可重试状态(响应.status)) return { 响应, 模型 }
+      最后错误 = new Error("网关返回 " + 响应.status + "（模型 " + 模型 + "）")
     } catch (错误: any) {
       if (参数.信号?.aborted) throw 错误
-      最后错误 = 尝试.超时了() ? new Error("网关超时（" + 超时秒 + " 秒）") : 错误
+      最后错误 = 尝试.超时了() ? new Error("网关超时（" + 超时秒 + " 秒，模型 " + 模型 + "）") : 错误
     } finally {
       尝试.收尾()
     }
@@ -199,20 +251,20 @@ async function 发请求(参数: 流式参数, 带用量: boolean, 带工具: bo
  * 2) 400/422 就去掉 stream_options 再试（有的网关不认）；
  * 3) 还不行、而且这次带了 tools，就去掉 tools 再试，并告诉上层「工具被拒」——上层退化到约定 JSON 块。
  */
-async function 建连(参数: 流式参数): Promise<{ 响应: Response; 工具被拒: boolean }> {
+async function 建连(参数: 流式参数): Promise<{ 响应: Response; 工具被拒: boolean; 模型: string }> {
   const 带工具 = Boolean(参数.工具 && 参数.工具.length > 0) && 参数.工具选择 !== "none"
-  let 响应 = await 发请求(参数, true, 带工具)
-  if (响应.status === 400 || 响应.status === 422) 响应 = await 发请求(参数, false, 带工具)
-  if ((响应.status === 400 || 响应.status === 422) && 带工具) {
-    响应 = await 发请求(参数, false, false)
-    return { 响应, 工具被拒: true }
+  let 结果 = await 发请求(参数, true, 带工具)
+  if (结果.响应.status === 400 || 结果.响应.status === 422) 结果 = await 发请求(参数, false, 带工具)
+  if ((结果.响应.status === 400 || 结果.响应.status === 422) && 带工具) {
+    结果 = await 发请求(参数, false, false)
+    return { 响应: 结果.响应, 工具被拒: true, 模型: 结果.模型 }
   }
-  return { 响应, 工具被拒: false }
+  return { 响应: 结果.响应, 工具被拒: false, 模型: 结果.模型 }
 }
 
 /** 核心：一边收字一边攒工具调用。 */
 export async function 流式对话带工具(参数: 流式参数): Promise<流式结果> {
-  const { 响应, 工具被拒 } = await 建连(参数)
+  const { 响应, 工具被拒, 模型 } = await 建连(参数)
   if (!响应.ok || !响应.body) {
     const 详情 = await 响应.text().catch(() => "")
     throw new Error("网关返回 " + 响应.status + " " + 详情.slice(0, 200))
@@ -269,7 +321,7 @@ export async function 流式对话带工具(参数: 流式参数): Promise<流�
     .map(([, 槽], 序) => ({ ...槽, id: 槽.id || "call_" + 序 }))
     .filter((槽) => 槽.名称.trim().length > 0)
 
-  return { 文本: 全文, 工具调用: 工具调用们, 工具被拒 }
+  return { 文本: 全文, 工具调用: 工具调用们, 工具被拒, 模型, 换过模型: 模型 !== String(参数.模型 ?? "") }
 }
 
 /** 老接口：只要正文。工具调用由 流式对话带工具 提供。 */

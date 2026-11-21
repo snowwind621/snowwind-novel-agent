@@ -5,7 +5,10 @@
 
 import { build } from "esbuild"
 import fs from "node:fs/promises"
+import os from "node:os"
 import path from "node:path"
+import http from "node:http"
+import { execFileSync } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import { createRequire } from "node:module"
 
@@ -90,6 +93,11 @@ async function 装载内核() {
     'export * as 表格 from "./09 台账同步/表格改写.ts"',
     'export * as 扫描 from "./10 书库检索/项目扫描.ts"',
     'export * as 导出 from "./12 导出转换/导出正文.ts"',
+    'export * as 格式 from "./12 导出转换/导出格式.ts"',
+    'export * as 提交 from "./11 文件工作区/提交策略.ts"',
+    'export * as 策略 from "./04 模型接入/网关客户端.ts"',
+    'export * as 装配 from "./06 智能体运行时/上下文装配.ts"',
+    'export * as 压缩 from "./06 智能体运行时/对话压缩.ts"',
   ].join("\n")
 
   const 产物 = await build({
@@ -101,11 +109,37 @@ async function 装载内核() {
     target: "node20",
     external: ["electron"],
     logLevel: "silent",
+    loader: { ".css": "text" },
   })
   const 文本 = 产物.outputFiles[0].text
   const 模块 = { exports: {} }
   const 求值 = new Function("exports", "require", "module", "__filename", "__dirname", 文本)
   求值(模块.exports, createRequire(path.join(根目录, "package.json")), 模块, path.join(样本根, "内核.cjs"), 根目录)
+  return 模块.exports
+}
+
+/**
+ * 界面那侧纯逻辑（撤回栈深度）单独打一份：正文编辑是 .tsx，还要一个假的 window，
+ * 否则它模块顶层那句 window.桥 会当场炸。
+ */
+async function 装载编辑器() {
+  globalThis.window = globalThis.window ?? { 桥: {} }
+  const 入口 = 'export { 取撤回深度, 裁栈 } from "./02 界面渲染/正文编辑.tsx"'
+  const 产物 = await build({
+    stdin: { contents: 入口, resolveDir: 根目录, sourcefile: "回归界面入口.tsx", loader: "tsx" },
+    bundle: true,
+    write: false,
+    platform: "node",
+    format: "cjs",
+    target: "node20",
+    external: ["electron"],
+    logLevel: "silent",
+    loader: { ".css": "text" },
+    jsx: "automatic",
+  })
+  const 模块 = { exports: {} }
+  const 求值 = new Function("exports", "require", "module", "__filename", "__dirname", 产物.outputFiles[0].text)
+  求值(模块.exports, createRequire(path.join(根目录, "package.json")), 模块, path.join(样本根, "界面内核.cjs"), 根目录)
   return 模块.exports
 }
 
@@ -193,6 +227,10 @@ const 章三 = "打戏来了！"
 
 async function 造样本(布局) {
   await fs.rm(样本根, { recursive: true, force: true })
+  // 设置组的夹具：一个数据目录（放 设置.json）+ 一个真的空 git 仓库（测提交策略）
+  await fs.mkdir(设置数据, { recursive: true })
+  await fs.mkdir(设置库, { recursive: true })
+  execFileSync("git", ["init", "-q"], { cwd: 设置库 })
   await fs.mkdir(path.join(书库根, "正文", "第一卷"), { recursive: true })
   await fs.mkdir(path.join(书库根, "正文", "第二卷"), { recursive: true })
   await fs.mkdir(path.join(书库根, "台账"), { recursive: true })
@@ -669,6 +707,211 @@ async function 跑扫描(扫描) {
   })
 }
 
+// ────────────────────────── 6. 设置真生效（8 个「假开关」） ──────────────────────────
+
+const 设置样本 = path.join(样本根, "设置样本")
+const 设置数据 = path.join(设置样本, "数据")
+const 设置库 = path.join(设置样本, "库")
+
+/** 写一份 设置.json；等 15ms 让 mtime 变，主进程那边的缓存才认得出是新文件。 */
+async function 写设置(补丁) {
+  await fs.writeFile(path.join(设置数据, "设置.json"), JSON.stringify(补丁, null, 2), "utf8")
+  await new Promise((解决) => setTimeout(解决, 15))
+}
+
+/** 假网关：认「甲」就 500，别的都 200 流一行字。用来数「重试时网关到底收到了哪个模型」。 */
+async function 起假网关() {
+  const 收到的模型 = []
+  const 服务 = http.createServer((请求, 响应) => {
+    let 体 = ""
+    请求.on("data", (块) => (体 += 块))
+    请求.on("end", () => {
+      let 模型 = "?"
+      try {
+        模型 = JSON.parse(体).model
+      } catch {
+        /* 不是 JSON 就当未知模型 */
+      }
+      收到的模型.push(模型)
+      if (模型 === "甲") {
+        响应.writeHead(500, { "Content-Type": "application/json" })
+        响应.end('{"error":"boom"}')
+        return
+      }
+      响应.writeHead(200, { "Content-Type": "text/event-stream" })
+      响应.write("data: " + JSON.stringify({ choices: [{ delta: { content: "好" } }] }) + "\n\n")
+      响应.write("data: [DONE]\n\n")
+      响应.end()
+    })
+  })
+  await new Promise((解决) => 服务.listen(0, "127.0.0.1", 解决))
+  return { 服务, 收到的模型, 基址: "http://127.0.0.1:" + 服务.address().port + "/v1" }
+}
+
+async function 跑设置(内核, 编辑器) {
+  分组("设置真生效 · 自动Git / 撤回栈 / 换模型 / 摘要 / 上章 / 校验建议 / 导出格式")
+
+  // 把「设置.json 在哪」指到本组的夹具上，免得读到开发机上那份真设置
+  const 旧数据目录 = process.env.SNOWWIND_DATA_DIR
+  process.env.SNOWWIND_DATA_DIR = 设置数据
+
+  const 成员 = { id: "m1", 名称: "执笔", 角色: "总编", 管辖: [], 人格: "你是总编。", 状态: "在线", 最近: "" }
+  const 分工 = { 总编: "甲", 执笔: "乙", 审校: "丙", 助手: "丁" }
+
+  await 用例("设置", "自动Git 打开：自动保存就提交", async () => {
+    await 写设置({ 编辑器: { 自动Git: true } })
+    断言.相等(
+      await 内核.提交.该不该提交(设置库, "正文甲", false),
+      { 该提交: true, 原因: "首次" },
+      "开着时第一次自动保存就该提交",
+    )
+  })
+
+  await 用例("设置", "自动Git 关掉：自动保存只写盘，手动保存仍提交", async () => {
+    await 写设置({ 编辑器: { 自动Git: false } })
+    断言.相等(
+      await 内核.提交.该不该提交(设置库, "正文乙", false),
+      { 该提交: false, 原因: "自动提交已关" },
+      "关掉后自动保存不再提交",
+    )
+    断言.相等(
+      await 内核.提交.该不该提交(设置库, "正文丙", true),
+      { 该提交: true, 原因: "手动" },
+      "手动保存（Ctrl+S）照样提交",
+    )
+  })
+
+  await 用例("设置", "撤回栈深度：改成 10 就只剩 10 步", () => {
+    if (!编辑器 || 编辑器.失败) throw new Error("界面内核没装载成功：" + String(编辑器 && 编辑器.失败))
+    const 长栈 = Array.from({ length: 30 }, (_, 序) => "第" + 序 + "版")
+    断言.相等(编辑器.裁栈(长栈, 100).length, 30, "深度 100：30 步都留着")
+    断言.相等(编辑器.裁栈(长栈, 10).length, 10, "深度 10：只留 10 步")
+    断言.相等(编辑器.裁栈(长栈, 10)[9], "第29版", "留下的是最新的那几步")
+    断言.相等(编辑器.取撤回深度(0), 100, "非法值回落 100")
+    断言.相等(编辑器.取撤回深度(250), 250, "合法值原样用")
+  })
+
+  await 用例("设置", "失败换模型：重试切到下一个分工模型", async () => {
+    const 网关 = await 起假网关()
+    try {
+      const 文本 = await 内核.策略.流式对话({
+        基址: 网关.基址,
+        密钥: "k",
+        消息: [{ role: "user", content: "写一句" }],
+        回调: () => {},
+        模型: "甲",
+        ...内核.策略.取调用策略({ 重试次数: 1, 重试间隔秒: 0, 失败换模型: true, 分工 }),
+      })
+      断言.相等(网关.收到的模型, ["甲", "乙"], "网关先后收到 总编甲 → 执笔乙")
+      断言.相等(文本, "好", "换到乙之后拿到了正文")
+    } finally {
+      网关.服务.close()
+    }
+  })
+
+  await 用例("设置", "失败换模型关掉：重试还是原模型，错误里写明是哪个模型", async () => {
+    const 网关 = await 起假网关()
+    try {
+      let 报错 = ""
+      try {
+        await 内核.策略.流式对话({
+          基址: 网关.基址,
+          密钥: "k",
+          消息: [{ role: "user", content: "写一句" }],
+          回调: () => {},
+          模型: "甲",
+          ...内核.策略.取调用策略({ 重试次数: 1, 重试间隔秒: 0, 失败换模型: false, 分工 }),
+        })
+      } catch (错误) {
+        报错 = String((错误 && 错误.message) || 错误)
+      }
+      断言.相等(网关.收到的模型, ["甲", "甲"], "两次都还是甲")
+      断言.含(报错, "模型 甲", "错误里写明是哪个模型失败")
+    } finally {
+      网关.服务.close()
+    }
+  })
+
+  await 用例("设置", "失败换模型：四个分工配同一个模型时无从换起", () => {
+    const 策略值 = 内核.策略.取调用策略({
+      失败换模型: true,
+      分工: { 总编: "同一个", 执笔: "同一个", 审校: "同一个", 助手: "同一个" },
+    })
+    断言.相等(策略值.换模型, { 开关: true, 顺序: ["同一个"] }, "重复模型被去重，顺序只剩一个")
+  })
+
+  await 用例("设置", "摘要模型：填了就用它，留空回落助手", () => {
+    断言.相等(
+      内核.压缩.取摘要模型({ 上下文: { 摘要模型: "摘要专用" }, 模型: { 分工: { 助手: "助手模型" } } }),
+      "摘要专用",
+      "填了就用填的",
+    )
+    断言.相等(
+      内核.压缩.取摘要模型({ 上下文: { 摘要模型: "  " }, 模型: { 分工: { 助手: "助手模型" } } }),
+      "助手模型",
+      "留空回落助手",
+    )
+    断言.相等(内核.压缩.取摘要模型({}), "", "什么都没配就是空")
+  })
+
+  await 用例("设置", "注入上章结尾：打开后提示里带上一章最后 N 字", async () => {
+    await 写设置({ 上下文: { 注入上章结尾: true, 注入上章字数: 400 } })
+    const 开 = await 内核.装配.装配上下文({ 根目录: 书库根, 数据目录: 设置数据, 成员, 任务: "写第 2 章", 关键词: [] })
+    断言.含(开.系统, "【上一章结尾（第 1 章 · 最后 400 字）】", "提示里带上了这一段的标题")
+    断言.含(开.系统, "开局第一句。", "带的是第 1 章的正文")
+
+    await 写设置({ 上下文: { 注入上章结尾: false, 注入上章字数: 400 } })
+    const 关 = await 内核.装配.装配上下文({ 根目录: 书库根, 数据目录: 设置数据, 成员, 任务: "写第 2 章", 关键词: [] })
+    断言.不含(关.系统, "【上一章结尾", "关掉后提示里没有这一段")
+    断言.含(关.系统, "你是总编。", "关掉后人格这些照旧")
+  })
+
+  await 用例("设置", "校验修复建议：默认跟设置走，命令行能强行改", () => {
+    const 跑 = (旗子) => {
+      const 参 = [path.join(根目录, "18 构建工具", "校验书库.mjs"), 书库根, ...旗子]
+      try {
+        return execFileSync(process.execPath, 参, {
+          encoding: "utf8",
+          env: { ...process.env, SNOWWIND_DATA_DIR: 设置数据 },
+          timeout: 120000,
+        })
+      } catch (错误) {
+        return String(错误.stdout ?? "") + String(错误.stderr ?? "")
+      }
+    }
+    const 抓 = (文本) => String(文本).split("\n").find((行) => 行.startsWith("修复建议")) ?? "（报告里没有这一行）"
+    return (async () => {
+      await 写设置({ 书库: { 校验修复建议: false } })
+      断言.含(抓(跑([])), "修复建议：关（设置.json", "设置关掉 → 默认不附建议")
+      await 写设置({ 书库: { 校验修复建议: true } })
+      断言.含(抓(跑([])), "修复建议：开（设置.json", "设置打开 → 默认附建议")
+      断言.含(抓(跑(["--不修复建议"])), "命令行 --不修复建议", "命令行能强行关")
+      断言.含(抓(跑(["--修复建议"])), "命令行 --修复建议", "命令行能强行开")
+    })()
+  })
+
+  await 用例("设置", "导出格式：默认格式排第一，别名能直接导（界面接上前的接口）", () => {
+    const 菜单 = 内核.格式.导出菜单({ 导出格式: "epub" })
+    断言.相等(菜单[0].值, "epub", "默认那个排第一")
+    断言.为真(菜单[0].默认, "而且带「默认」标记")
+    断言.相等(
+      菜单.map((项) => 项.值).sort(),
+      ["docx", "epub", "markdown", "txt"],
+      "四种格式都还在菜单里",
+    )
+    断言.相等(内核.格式.默认生成参数({ 导出格式: "markdown" }), "md", "markdown 翻成 md")
+    断言.相等(内核.格式.默认导出格式({ 导出格式: "pdf" }), "docx", "不认识的值回落 docx")
+    断言.相等(
+      内核.导出.生成导出("markdown", "书", [{ 编号: 1, 标题: "开张", 正文: "正文。" }]).文件名,
+      "书.md",
+      "生成导出认 markdown 这个别名（以前会抛「不支持的格式」）",
+    )
+  })
+
+  if (旧数据目录 === undefined) delete process.env.SNOWWIND_DATA_DIR
+  else process.env.SNOWWIND_DATA_DIR = 旧数据目录
+}
+
 // ────────────────────────── 主流程 ──────────────────────────
 
 async function 主() {
@@ -696,11 +939,15 @@ async function 主() {
   await 跑导出(内核.导出)
   await 跑扫描(内核.扫描)
 
+  const 界面内核 = await 装载编辑器().catch((错误) => ({ 失败: String((错误 && 错误.message) || 错误) }))
+  await 跑设置(内核, 界面内核)
+
   const 总数 = 记账.通过 + 记账.失败
   console.log("")
   console.log("──────── 汇总 ────────")
   console.log("共 " + 总数 + " 条：通过 " + 记账.通过 + "，失败 " + 记账.失败 + "，耗时 " + Math.round(记账.毫秒) + "ms")
   console.log("样例书库：99 构建产物/回归样本/样本书库（可随时删掉，重跑会重建）")
+  console.log("设置样本：99 构建产物/回归样本/设置样本（一份 设置.json + 一个空 git 仓库）")
 
   if (记账.失败 > 0) {
     console.log("")
