@@ -58,3 +58,18 @@ for (const 名 of exe们) {
   console.log("✅ " + 全 + "  " + 兆.toFixed(1) + " MB")
 }
 console.log("[打包] 合计 " + 合计.toFixed(1) + " MB。双击安装即可用，会自动建开始菜单与桌面快捷方式；书库数据仍在 %APPDATA%\\snowwind-novel-agent，卸载不删。")
+
+// electron-builder 的 latest.yml 用「包名-setup-版本.exe」，而实际文件用 productName（中文）。
+// 不改名、改 yml：把 url/path 换成真实文件名，自动更新才不会 404。
+const 最新 = path.join(产物目录, "latest.yml")
+if (fs.existsSync(最新) && exe们.length === 1) {
+  const 真名 = exe们[0]
+  let 文 = fs.readFileSync(最新, "utf8")
+  const 原 = 文
+  文 = 文.replace(/^(\s*-?\s*url:\s*).*$/m, "$1" + 真名)
+  文 = 文.replace(/^path:.*$/m, "path: " + 真名)
+  if (文 !== 原) {
+    fs.writeFileSync(最新, 文, "utf8")
+    console.log("[打包] 已把 latest.yml 的文件名对齐成 " + 真名)
+  }
+}

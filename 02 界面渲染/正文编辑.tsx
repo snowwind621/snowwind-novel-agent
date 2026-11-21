@@ -1,6 +1,6 @@
 // 只负责一件事：中栏编辑器——标签页、不可编辑的标题块、富文本正文、自动保存、撤回重做。
 import React, { useEffect, useRef, useState } from "react"
-import { 渲染Markdown, 取回Markdown } from "./编辑器渲染"
+import { 渲染Markdown, 取回Markdown, 定位块, 监听定位行 } from "./编辑器渲染"
 import "./编辑器样式.css"
 import { 桥, 时刻 } from "./接口"
 import type { 自动同步状态, 自动同步上次 } from "./接口"
@@ -129,6 +129,8 @@ export function 正文编辑(属性: {
   不一致数?: number
   /** 点提示跳到数据面板的一致性分类 */
   去一致性?: () => void
+  /** 要定位到的源码行号（1 起）；变了就滚过去并高亮那一段，预览和富文本都认 */
+  定位行?: number | null
 }) {
   const { 已开书库, 标签们, 当前标签, 切标签, 关标签, 标题, 正文, 改, 保存, 提示字, 自动保存毫秒 } = 属性
   const 提交延迟 = Math.max(200, 自动保存毫秒 ?? 默认提交延迟)
@@ -155,6 +157,14 @@ export function 正文编辑(属性: {
   const 最新保存 = useRef(保存)
   /** 分块灌入的续灌定时器（换章/换文本要掐掉） */
   const 续灌 = useRef<number | null>(null)
+
+  // 任何面板喊「定位到第 N 行」：滚过去 + 高亮 +（富文本里）把光标放进去
+  useEffect(() => {
+    return 监听定位行((行号) => {
+      const 区 = 富.current?.closest<HTMLElement>(".中栏") ?? document.querySelector<HTMLElement>(".中栏")
+      if (!定位块(区, 行号)) 定位块(富.current, 行号)
+    })
+  }, [])
 
   useEffect(() => {
     最新正文.current = 正文

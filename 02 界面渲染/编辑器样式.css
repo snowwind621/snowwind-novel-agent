@@ -228,3 +228,5 @@
 .编辑器-富文本 h1, .编辑器-富文本 h2, .编辑器-富文本 h3,
 .编辑器-富文本 h4, .编辑器-富文本 h5, .编辑器-富文本 h6 { margin: 0.6em 0 0.3em; }
 .编辑器-富文本 ::selection { background: var(--主淡); }
+/* 行定位：跳过去之后短暂高亮那一段，颜色走变量，深浅色都成立 */
+.行已定位 { background: var(--主淡); border-radius: 6px; box-shadow: 0 0 0 2px var(--主淡); transition: background 240ms ease; }

@@ -6,6 +6,10 @@ productName: 雪风小说工坊
 directories:
   output: 99 构建产物/发布
 
+# 产物名不自定义：electron-builder 的 latest.yml 固定用「包名-setup-版本.exe」，
+# 一旦把 exe 改名成中文，latest.yml 里的 url 就对不上，自动更新会 404。
+# 想要中文名字的话在发布时另外复制一份，别改这里。
+
 # 只把跑起来真正需要的三样塞进 app.asar：主进程、预加载、界面产物。
 # 不写死 99 构建产物/**，否则 dist 里的截图、自检脚本会被一起打进去，白胖几十兆。
 # dependencies（react/react-dom）由 electron-builder 自动带上，devDependencies 一个不带。
@@ -19,10 +23,15 @@ asar: true
 
 # 自动更新源：generic（静态服务器 / 对象存储都行）。发布时把 exe + blockmap + latest.yml
 # 一起传到这个目录，electron-updater 就会照 latest.yml 比对版本。地址改了只动这一行。
+# 自动更新的发布源：与本仓库的 Release 对齐（上传 exe / .blockmap / latest.yml 三个文件即可）
+# 自动更新的发布源：与本仓库的 GitHub Release 对齐。
+# 发版时把 exe / .exe.blockmap / latest.yml 三个文件作为 Release 资产上传即可，
+# 客户端会去 releases/latest 找 latest.yml 比对版本。
 publish:
-  provider: generic
-  url: https://example.com/xuefeng/updates
-  channel: latest
+  provider: github
+  owner: snowwind621
+  repo: snowwind-novel-agent
+  releaseType: release
 
 # 直接用 node_modules 里已装好的 electron，不再从网上下 115 MB 的 zip；离线也能打包。
 electronDist: node_modules/electron/dist
@@ -49,5 +58,4 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: 雪风小说工坊
-  artifactName: 雪风小说工坊-${version}-安装版.${ext}
   deleteAppDataOnUninstall: false

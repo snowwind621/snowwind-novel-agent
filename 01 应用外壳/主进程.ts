@@ -5,6 +5,7 @@ import fs from "node:fs"
 import { 通道, 推送事件 } from "../03 进程桥接/通道"
 import type { 对话请求, 续写请求, 改写请求 } from "../03 进程桥接/通道"
 import { 创建请求处理 } from "./请求处理"
+import { 初始化自动更新 } from "./自动更新"
 
 /** 启动诊断：出问题时先看 userData/诊断.log，而不是猜。 */
 function 诊断(行: string): void {
@@ -45,6 +46,9 @@ function 建窗口(): BrowserWindow {
 }
 
 app.whenReady().then(async () => {
+  // 自动更新：打包后才查；开发环境与无网一律静默
+  // 取当前窗口：自动更新那边只需要一个可用的 BrowserWindow
+  void 初始化自动更新({ 取窗口: () => BrowserWindow.getAllWindows()[0] ?? null, 开发中: !app.isPackaged })
   诊断("启动 userData=" + app.getPath("userData") + " argv=" + process.argv.join(" "))
 
   const 处理器 = 创建请求处理(

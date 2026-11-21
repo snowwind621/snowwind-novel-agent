@@ -39,14 +39,20 @@ function 行内(已转义: string, 深 = 0): string {
 
 /** 中文字体里行首那两个全角空格就是「首行缩进」，换算成 em 交给 CSS，文字本身不再带空格。
  *  富文本编辑模式下不能这么做：编辑区里的空格必须是真字符，否则用户删不掉、也回写不回源码。 */
-function 渲染段落(原行: string, 缩进当文字: boolean): string {
+function 渲染段落(原行: string, 缩进当文字: boolean, 行号 = 0): string {
   const 前导 = /^[\u3000 ]*/.exec(原行)?.[0] ?? ""
   const 文字 = 原行.slice(前导.length).replace(/\s+$/, "")
-  if (缩进当文字) return "<p>" + 行内(转义(前导 + 文字)) + "</p>"
+  const 标 = 行号 > 0 ? ' data-行号="' + 行号 + '"' : ""
+  if (缩进当文字) return "<p" + 标 + ">" + 行内(转义(前导 + 文字)) + "</p>"
   const 全角 = (前导.match(/\u3000/g) ?? []).length
   const em = 全角 + (前导.length - 全角) * 0.5
   const 式 = em > 0 ? ' style="text-indent:' + em + 'em"' : ""
-  return "<p" + 式 + ">" + 行内(转义(文字)) + "</p>"
+  return "<p" + 标 + 式 + ">" + 行内(转义(文字)) + "</p>"
+}
+
+/** 每个块都带 data-行号（= 它在源码里的起始行，1 起）。预览 DOM 和 contenteditable 都靠它定位。 */
+export function 行标(行号: number): string {
+  return 行号 > 0 ? ' data-行号="' + 行号 + '"' : ""
 }
 
 function 拆格(行: string): string[] {
@@ -59,7 +65,7 @@ interface 列表项 {
   文本: string
 }
 
-function 渲染列表(项们: 列表项[]): string {
+function 渲染列表(项们: 列表项[], 行号 = 0): string {
   const 基 = 项们[0]?.层级 ?? 0
   const 出: string[] = []
   let 序 = 0
@@ -88,7 +94,7 @@ function 渲染列表(项们: 列表项[]): string {
     }
     出.push("<" + 标签 + ">" + 条目.join("") + "</" + 标签 + ">")
   }
-  return 出.join("\n")
+  return 出.join("\n").replace(/^<(ul|ol)/, (m) => "<" + m.slice(1) + 行标(行号))
 }
 
 export interface 渲染选项 {
@@ -97,13 +103,16 @@ export interface 渲染选项 {
 }
 
 /** 唯一的出口：正文 Markdown → HTML。返回的 HTML 里所有文字都来自转义后的文本。 */
-export function 渲染Markdown(源: string, 选项?: 渲染选项): string {
+export function 渲染Markdown(源: string, 选项?: 渲染选项 & { 起始行?: number }): string {
   const 缩进当文字 = Boolean(选项?.缩进当文字)
+  // 引用块是递归渲染的：把「起始行」传下去，里面的块才不会从 1 重新数
+  const 基准 = 选项?.起始行 ? 选项.起始行 - 1 : 0
   const 行们 = String(源 ?? "").replace(/\r\n?/g, "\n").split("\n")
   const 出: string[] = []
   let 序 = 0
   while (序 < 行们.length) {
     const 行 = 行们[序]
+    const 本行 = 序 + 1 + 基准
     const 修剪 = 行.trim()
     if (修剪 === "") {
       序++
@@ -121,7 +130,7 @@ export function 渲染Markdown(源: string, 选项?: 渲染选项): string {
       }
       序++
       出.push(
-        '<pre class="预览-代码块"><code' +
+        "<pre" + 行标(本行) + ' class="预览-代码块"><code' +
           (语言 ? ' class="语言-' + 转义(语言) + '"' : "") +
           ">" +
           转义(代码.join("\n")) +
@@ -131,7 +140,7 @@ export function 渲染Markdown(源: string, 选项?: 渲染选项): string {
     }
 
     if (/^(?:-{3,}|\*{3,}|_{3,})$/.test(修剪)) {
-      出.push("<hr />")
+      出.push("<hr" + 行标(本行) + " />")
       序++
       continue
     }
@@ -139,7 +148,7 @@ export function 渲染Markdown(源: string, 选项?: 渲染选项): string {
     const 标题 = /^(#{1,6})\s+(.+)$/.exec(修剪)
     if (标题) {
       const 级 = 标题[1].length
-      出.push("<h" + 级 + ">" + 行内(转义(标题[2].trim())) + "</h" + 级 + ">")
+      出.push("<h" + 级 + 行标(本行) + ">" + 行内(转义(标题[2].trim())) + "</h" + 级 + ">")
       序++
       continue
     }
@@ -153,7 +162,7 @@ export function 渲染Markdown(源: string, 选项?: 渲染选项): string {
         序++
       }
       出.push(
-        "<table><thead><tr>" +
+        "<table" + 行标(本行) + "><thead><tr>" +
           表头.map((格) => "<th>" + 行内(转义(格)) + "</th>").join("") +
           "</tr></thead><tbody>" +
           数据行
@@ -173,7 +182,7 @@ export function 渲染Markdown(源: string, 选项?: 渲染选项): string {
         内里.push(行们[序].trim().replace(/^>\s?/, ""))
         序++
       }
-      出.push("<blockquote>" + 渲染Markdown(内里.join("\n")) + "</blockquote>")
+      出.push("<blockquote" + 行标(本行) + ">" + 渲染Markdown(内里.join("\n"), { 起始行: 本行 + 1 }) + "</blockquote>")
       continue
     }
 
@@ -189,11 +198,11 @@ export function 渲染Markdown(源: string, 选项?: 渲染选项): string {
         })
         序++
       }
-      出.push(渲染列表(项们))
+      出.push(渲染列表(项们, 本行))
       continue
     }
 
-    出.push(渲染段落(行, 缩进当文字))
+    出.push(渲染段落(行, 缩进当文字, 本行))
     序++
   }
   return 出.join("\n")
@@ -325,4 +334,47 @@ export function 取回Markdown(根: HTMLElement, 换行 = "\n"): string {
   }
   while (收尾.length > 0 && 收尾[收尾.length - 1] === "") 收尾.pop()
   return 收尾.join(换行)
+}
+
+/** 任何面板都能一行触发定位：请求定位行(161)。编辑器里监听后滚过去并高亮。 */
+export function 请求定位行(行号: number): void {
+  if (!(行号 > 0)) return
+  window.dispatchEvent(new CustomEvent("小说:定位行", { detail: 行号 }))
+}
+
+export function 监听定位行(回调: (行号: number) => void): () => void {
+  const 监听 = (事件: Event) => {
+    const 号 = Number((事件 as CustomEvent<number>).detail ?? 0)
+    if (号 > 0) 回调(号)
+  }
+  window.addEventListener("小说:定位行", 监听)
+  return () => window.removeEventListener("小说:定位行", 监听)
+}
+
+/** 跳到某一行的块：预览 DOM 和 contenteditable 都能用（两者都是 渲染Markdown 的产物）。 */
+export function 定位块(根: HTMLElement | null, 行号: number): boolean {
+  if (!根 || !(行号 > 0)) return false
+  const 块们 = [...根.querySelectorAll<HTMLElement>("[data-行号]")]
+  if (块们.length === 0) return false
+  // 找「起始行号 ≤ 目标」里最靠近的一个；目标超出末尾就用最后一个块
+  let 命中 = 块们[0]
+  for (const 块 of 块们) {
+    const 号 = Number(块.dataset.行号 ?? 0)
+    if (号 <= 行号) 命中 = 块
+    else break
+  }
+  命中.scrollIntoView({ block: "center", behavior: "smooth" })
+  命中.classList.add("行已定位")
+  window.setTimeout(() => 命中.classList.remove("行已定位"), 1800)
+  // contenteditable 里顺手把光标放进这个块，省得用户再点一下
+  if (命中.isContentEditable || 命中.closest('[contenteditable="true"]')) {
+    const 区 = document.createRange()
+    区.selectNodeContents(命中)
+    区.collapse(true)
+    const 选 = window.getSelection()
+    选?.removeAllRanges()
+    选?.addRange(区)
+    命中.closest<HTMLElement>('[contenteditable="true"]')?.focus()
+  }
+  return true
 }
