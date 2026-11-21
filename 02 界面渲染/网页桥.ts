@@ -1,6 +1,6 @@
 // 只负责一件事：在没有 Electron 外壳时，用 HTTP 把界面接到同一个处理器上。
 import type { 项目摘要, 看板数据, 设置, 对话请求, 续写请求, 改写请求 } from "../03 进程桥接/通道"
-import type { 知情结果, 一致性报告, 一致性提示, 一致性问题, 补齐结果, 自动同步状态, 自动同步进度, 同步结果 } from "./接口"
+import type { 知情结果, 一致性报告, 一致性提示, 一致性问题, 补齐结果, 自动同步状态, 自动同步进度, 同步结果, 多视角进度, 多视角结果 } from "./接口"
 import type { 桥接口, 对话事件, 派活进度 } from "./接口"
 
 async function 调用(方法: string, ...参数: unknown[]): Promise<any> {
@@ -56,6 +56,7 @@ async function 流式请求(
 export function 创建网页桥(): 桥接口 {
   const 监听者 = new Set<(事件: 对话事件) => void>()
   const 派活监听者 = new Set<(事件: 派活进度) => void>()
+  const 多视角监听者 = new Set<(事件: 多视角进度) => void>()
 
   return {
     打开项目: (路径: string) => 调用("项目/打开", 路径),
@@ -114,6 +115,49 @@ export function 创建网页桥(): 桥接口 {
       }
     },
     台账立即同步: (章节号: number) => 调用("台账/立即同步", 章节号) as Promise<同步结果>,
+    /** 多视角：POST 一次跑完全程，进度用 SSE 边跑边推；结果只回界面，不落盘 */
+    多视角: async (章节号?: number, 执笔模型?: string): Promise<多视角结果> => {
+      const 响应 = await fetch("/接口/多视角", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 章节号: 章节号 ?? null, 执笔模型: 执笔模型 ?? null }),
+      })
+      if (!响应.body) throw new Error("没有响应体")
+      const 读 = 响应.body.getReader()
+      const 解 = new TextDecoder()
+      let 缓冲 = ""
+      let 结论: any = null
+      for (;;) {
+        const { value, done } = await 读.read()
+        if (done) break
+        缓冲 += 解.decode(value, { stream: true })
+        const 段们 = 缓冲.split("\n\n")
+        缓冲 = 段们.pop() ?? ""
+        for (const 段 of 段们) {
+          const 行 = 段.split("\n").find((x) => x.startsWith("data:"))
+          if (!行) continue
+          try {
+            const 事件 = JSON.parse(行.slice(5))
+            if (事件.类型 === "进度") {
+              for (const 回调 of 多视角监听者) 回调(事件 as 多视角进度)
+            } else if (事件.类型 === "结果") {
+              结论 = 事件
+            } else if (事件.类型 === "错误") {
+              throw new Error(事件.说明 ?? "多视角失败")
+            }
+          } catch (错误) {
+            if (错误 instanceof Error && 错误.message && !错误.message.includes("JSON")) throw 错误
+          }
+        }
+      }
+      if (!结论) throw new Error("多视角没有返回结果")
+      return 结论 as 多视角结果
+    },
+    /** 浏览器预览没有推送通道：这里只占位，分步进度以桌面端推送为准 */
+    监听多视角: (回调: (事件: 多视角进度) => void) => {
+      多视角监听者.add(回调)
+      return () => 多视角监听者.delete(回调)
+    },
     /** 浏览器预览没有 SSE 推送：轮询状态并在「正在跑 / 上次结果」变化时合成事件 */
     监听自动同步: (回调: (事件: 自动同步进度) => void) => {
       let 停 = false

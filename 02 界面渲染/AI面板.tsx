@@ -1,7 +1,7 @@
 // 只负责一件事：右侧对话栏——对话 / 讨论 / 计划三种模式，气泡、计划卡、提问卡、流式收字。
 import React, { useEffect, useRef, useState } from "react"
 import { 桥 } from "./接口"
-import type { 看板数据, 设置, 项目摘要, 集群成员, 对话事件, 对话条目, 工具回执, 用量 } from "./接口"
+import type { 看板数据, 设置, 项目摘要, 集群成员, 对话事件, 对话条目, 工具回执, 用量, 多视角进度, 多视角结果 } from "./接口"
 import { 组装系统提示 } from "../05 编排内核/章节提示词"
 import { 该压缩, 取要压的, 造摘要提示, 拼用户输入, 估算词元, 续摘要, 取摘要模型 } from "../06 智能体运行时/对话压缩"
 import type { 对话条 } from "../06 智能体运行时/对话压缩"
@@ -16,6 +16,15 @@ type 模式 = "对话" | "讨论" | "计划"
 
 const 模式们: 模式[] = ["对话", "讨论", "计划"]
 const 模式图标: Record<模式, 图标名> = { 对话: "笔", 讨论: "用户群", 计划: "灯泡" }
+
+/** 多视角的五步：键对应后端推送的「阶段」，名是界面上的说法 */
+const 多视角步骤 = [
+  { 键: "在场", 名: "选在场" },
+  { 键: "发言", 名: "各视角发言" },
+  { 键: "收敛", 名: "总编收敛" },
+  { 键: "成文", 名: "执笔成文" },
+  { 键: "核对", 名: "大纲核对" },
+] as const
 const 模式键 = "对话模式"
 
 /** 三种模式是同一个总控的三种姿态，不是三个功能。 */
@@ -211,6 +220,15 @@ export function AI面板(属性: {
   const [提示, set提示] = useState("")
   /** 提问卡里「自己写一句」的草稿，按气泡 id 存 */
   const [自定义答, set自定义答] = useState<Record<string, string>>({})
+  /** 多视角面板：开着没、跑着没、推到哪一步、结果是什么 */
+  const [多视角开, set多视角开] = useState(false)
+  const [多视角章, set多视角章] = useState<string>("")
+  const [多视角模型, set多视角模型] = useState("")
+  const [多视角跑, set多视角跑] = useState(false)
+  const [多视角进度们, set多视角进度们] = useState<多视角进度[]>([])
+  const [多视角结果, set多视角结果] = useState<多视角结果 | null>(null)
+  const [多视角话, set多视角话] = useState("")
+  const [采用中, set采用中] = useState(false)
   const [摘要, set摘要] = useState("")
   const [已压条数, set已压条数] = useState(0)
   const 当前请求 = useRef("")
@@ -564,6 +582,84 @@ export function AI面板(属性: {
     return () => 看.disconnect()
   }, [组们.length])
 
+  // —— 多视角成文 ——
+  const 默认执笔 = 属性.设定?.模型?.分工?.执笔 ?? ""
+
+  // 分步进度走主进程推送；浏览器预览没有推送通道，就只显示「推演中」
+  useEffect(() => {
+    if (!桥.监听多视角) return
+    return 桥.监听多视角((事件) => set多视角进度们((旧) => [...旧, 事件]))
+  }, [])
+
+  /** 已经跑到第几步（0 起）；没跑过就是 -1，跑完是 5 */
+  const 走到第几步 = (): number => {
+    if (多视角结果) return 5
+    if (多视角进度们.length === 0) return -1
+    const 阶段 = 多视角进度们[多视角进度们.length - 1].阶段
+    const 序 = 多视角步骤.findIndex((步) => 步.键 === 阶段)
+    if (阶段 === "纲要") return 0
+    if (阶段 === "完成") return 5
+    if (阶段 === "失败") return Math.max(0, 序)
+    return 序 >= 0 ? 序 : 0
+  }
+
+  const 步骤状态 = (键: string, 序: number): string => {
+    const 到 = 走到第几步()
+    if (到 >= 5) return 键 === "核对" && 多视角结果 && 多视角结果.大纲核对.结论 !== "通过" ? "完成 有疑" : "完成"
+    // 预览里收不到分步推送：跑着的时候至少把第一步标成进行中（后端确实是按顺序跑的）
+    if (到 < 0) return 多视角跑 && 序 === 0 ? "进行中" : "等待"
+    if (序 < 到) return "完成"
+    if (序 === 到) return 多视角跑 ? "进行中" : "完成"
+    return "等待"
+  }
+
+  const 步注 = (键: string): string => {
+    if (!多视角结果) return ""
+    if (键 === "在场") return 多视角结果.在场.length + " 人"
+    if (键 === "发言") return 多视角结果.各视角.length + " 段"
+    if (键 === "收敛") return 多视角结果.收敛 ? "已收口" : "空"
+    if (键 === "成文") return 多视角结果.正文.replace(/\s/g, "").length + " 字"
+    if (键 === "核对") return 多视角结果.大纲核对.结论
+    return ""
+  }
+
+  const 跑多视角 = async () => {
+    if (!桥.多视角) {
+      set多视角话("这个版本还没接上多视角（桌面端预加载还没暴露这个通道）")
+      return
+    }
+    set多视角跑(true)
+    set多视角结果(null)
+    set多视角话("")
+    set多视角进度们([])
+    try {
+      const 章 = 多视角章 ? Number(多视角章) : (章节号 ?? undefined)
+      const 结果 = await 桥.多视角(章, 多视角模型.trim() || undefined)
+      set多视角结果(结果)
+      set多视角话(结果.成功 ? "推演完成：只是预览，章节一个字都没动" : "没跑通：" + (结果.说明 || "原因没说明"))
+    } catch (错: any) {
+      set多视角话("调用失败：" + String(错?.message ?? 错))
+    } finally {
+      set多视角跑(false)
+    }
+  }
+
+  /** 只有点这里才写盘：写前二次确认，走 保存章节（原子写 + 可回滚） */
+  const 采用这段 = async () => {
+    const 结果 = 多视角结果
+    if (!结果 || !结果.正文.trim()) return
+    if (!window.confirm("把这段正文写进第 " + 结果.章节号 + " 章？会覆盖该章现有内容（可回滚）。")) return
+    set采用中(true)
+    try {
+      const 写 = await 桥.保存章节(结果.章节号, 结果.正文)
+      set多视角话(写.成功 ? "已写进第 " + 结果.章节号 + " 章：" + 写.说明 : "没写成：" + 写.说明)
+    } catch (错: any) {
+      set多视角话("写入失败：" + String(错?.message ?? 错))
+    } finally {
+      set采用中(false)
+    }
+  }
+
   const 滚到 = (号: number) => {
     const 目标 = document.getElementById("答-" + 号)
     if (!目标) return
@@ -722,6 +818,14 @@ export function AI面板(属性: {
           </button>
         ))}
         <div className="对话分段右">
+          <button
+            className={"小按钮 多视角入口" + (多视角开 ? " 选中" : "")}
+            onClick={() => set多视角开((旧) => !旧)}
+            title="多视角成文：在场的角色各说一段，总编收敛，执笔成文，再按大纲核对（只预览，不写章节）"
+          >
+            <图标 名="用户群" 大小={15} />
+            多视角
+          </button>
           <button className="小按钮 图标按钮" onClick={属性.清空对话} title="清空对话">
             <图标 名="清空" 大小={15} />
           </button>
@@ -730,6 +834,115 @@ export function AI面板(属性: {
           </button>
         </div>
       </div>
+
+      {多视角开 ? (
+        <div className="多视角面板">
+          <div className="多视角头">
+            <图标 名="用户群" 大小={15} />
+            <span>多视角成文</span>
+            <button className="小按钮 图标按钮 多视角关" onClick={() => set多视角开(false)} title="收起">
+              <图标 名="关闭" 大小={14} />
+            </button>
+          </div>
+          <div className="多视角表单">
+            <label className="多视角字段">
+              <span>第几章</span>
+              <input
+                className="工具输入"
+                value={多视角章}
+                placeholder={章节号 ? String(章节号) : "最新章节"}
+                onChange={(事件) => set多视角章(事件.target.value.replace(/[^0-9]/g, ""))}
+              />
+            </label>
+            <label className="多视角字段">
+              <span>执笔模型</span>
+              <input
+                className="工具输入"
+                value={多视角模型}
+                placeholder={默认执笔 || "跟设置走"}
+                onChange={(事件) => set多视角模型(事件.target.value)}
+              />
+            </label>
+            <button className="小按钮 多视角开始" disabled={多视角跑} onClick={() => void 跑多视角()}>
+              {多视角跑 ? "推演中…" : "开始推演"}
+            </button>
+          </div>
+          <div className="多视角步们">
+            {多视角步骤.map((步, 序) => {
+              const 态 = 步骤状态(步.键, 序)
+              return (
+                <div key={步.键} className={"多视角步 " + 态}>
+                  <span className="多视角点" />
+                  <span className="多视角步名">{步.名}</span>
+                  <span className="多视角步注">{步注(步.键)}</span>
+                </div>
+              )
+            })}
+          </div>
+          {多视角话 ? <div className={多视角结果?.成功 === false ? "多视角话 坏" : "多视角话"}>{多视角话}</div> : null}
+          {多视角结果 ? (
+            <div className="多视角结果">
+              <details className="多视角块" open>
+                <summary className="折叠头">在场 {多视角结果.在场.length} 人</summary>
+                <div className="多视角块体">
+                  {多视角结果.在场.length === 0 ? <div className="微信息">没有在场名单</div> : 多视角结果.在场.join("、")}
+                </div>
+              </details>
+              <details className="多视角块">
+                <summary className="折叠头">各视角发言 {多视角结果.各视角.length} 段</summary>
+                <div className="多视角块体">
+                  {多视角结果.各视角.map((项, 序) => (
+                    <div key={序} className="多视角发言">
+                      <div className="多视角发言名">{项.成员}</div>
+                      <div className="多视角发言文">{项.发言}</div>
+                    </div>
+                  ))}
+                </div>
+              </details>
+              <details className="多视角块">
+                <summary className="折叠头">收敛要点</summary>
+                <div className="多视角块体">{多视角结果.收敛 || "（没写出收敛要点）"}</div>
+              </details>
+              <details className="多视角块">
+                <summary className="折叠头">成文正文 {多视角结果.正文.replace(/\s/g, "").length} 字</summary>
+                <div className="多视角块体 多视角正文">{多视角结果.正文 || "（空）"}</div>
+              </details>
+              <details className="多视角块">
+                <summary className="折叠头">大纲核对：{多视角结果.大纲核对.结论}</summary>
+                <div className="多视角块体">
+                  {多视角结果.大纲核对.结论 === "通过" ? <div>逐拍都对上了</div> : null}
+                  {多视角结果.大纲核对.偏离.map((条, 序) => (
+                    <div key={"偏" + 序} className="多视角偏">缺：{条}</div>
+                  ))}
+                  {多视角结果.大纲核对.无法判定.map((条, 序) => (
+                    <div key={"无" + 序} className="多视角疑">无法判定：{条}</div>
+                  ))}
+                  {多视角结果.大纲核对.依据 ? <div className="微信息">依据：{多视角结果.大纲核对.依据}</div> : null}
+                </div>
+              </details>
+              <div className="多视角脚">
+                <button
+                  className="小按钮 多视角采用"
+                  disabled={采用中 || !多视角结果.正文.trim() || 多视角结果.大纲核对.结论 === "偏离"}
+                  onClick={() => void 采用这段()}
+                  title={
+                    多视角结果.大纲核对.结论 === "偏离"
+                      ? "大纲核对没通过（偏离），先按下面的缺拍补写，再采用"
+                      : "把这段正文写进章节文件（会再问你一次）"
+                  }
+                >
+                  {采用中 ? "写入中…" : "采用这段"}
+                </button>
+                <span className="微信息">
+                  {多视角结果.大纲核对.结论 === "偏离"
+                    ? "大纲核对没通过：补完缺拍才能采用"
+                    : "只预览：不点「采用这段」不会改章节"}
+                </span>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="对话副行">
         <span className="图标-芯片" title="模型">

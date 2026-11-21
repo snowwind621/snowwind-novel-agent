@@ -254,6 +254,54 @@ details[open] > .折叠头::before { transform: rotate(90deg); }
 .导航刻度.当前 { width: 4px; background: var(--主); }
 .消息组.到过 .气泡 { outline: 2px solid var(--主); outline-offset: 2px; }
 
+/* —— 多视角成文面板 —— */
+.多视角入口 { gap: 4px; }
+.多视角入口.选中 { background: var(--主淡); color: var(--主); }
+.多视角面板 {
+  position: absolute;
+  right: 10px;
+  bottom: 96px;
+  width: min(520px, calc(100% - 24px));
+  max-height: calc(100% - 150px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  overflow: auto;
+  background: var(--底浅);
+  border: 1px solid var(--线);
+  border-radius: var(--卡圆角, 10px);
+  box-shadow: var(--阴影);
+  z-index: 8;
+}
+.多视角头 { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--字); }
+.多视角关 { margin-left: auto; }
+.多视角表单 { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+.多视角字段 { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--字弱); }
+.多视角字段 .工具输入 { width: 110px; }
+.多视角开始 { margin-left: auto; }
+.多视角步们 { display: flex; flex-direction: column; gap: 4px; padding: 6px 0; }
+.多视角步 { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--字弱); }
+.多视角点 { width: 7px; height: 7px; border-radius: 50%; background: var(--线强); flex: none; }
+.多视角步.进行中 { color: var(--主); }
+.多视角步.进行中 .多视角点 { background: var(--主); animation: 多视角闪 1s ease-in-out infinite; }
+.多视角步.完成 { color: var(--字); }
+.多视角步.完成 .多视角点 { background: var(--好); }
+.多视角步.有疑 .多视角点 { background: var(--警); }
+@keyframes 多视角闪 { 50% { opacity: 0.35; } }
+.多视角步注 { margin-left: auto; color: var(--字弱); font-size: 11px; }
+.多视角话 { font-size: 11.5px; color: var(--好); }
+.多视角话.坏 { color: var(--危); }
+.多视角结果 { display: flex; flex-direction: column; gap: 6px; }
+.多视角块 { border-top: 1px solid var(--线淡); padding-top: 6px; }
+.多视角块体 { margin-top: 6px; font-size: 11.5px; line-height: 1.75; color: var(--字弱); white-space: pre-wrap; overflow-wrap: break-word; }
+.多视角发言 { margin-bottom: 8px; }
+.多视角发言名 { color: var(--字); font-size: 11.5px; }
+.多视角正文 { max-height: 220px; overflow: auto; color: var(--字); }
+.多视角偏 { color: var(--危); }
+.多视角疑 { color: var(--警); }
+.多视角脚 { display: flex; align-items: center; gap: 10px; padding-top: 8px; border-top: 1px solid var(--线淡); }
+
 /* —— 过程卡（参考 OpenFic 的对话区布局，实现自写） —— */
 .过程行 { display: flex; margin-top: 16px; }
 .过程卡 {
