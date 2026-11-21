@@ -90,10 +90,20 @@ const DOCX样式 = [
   '<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:qFormat/>',
   '<w:pPr><w:spacing w:before="480" w:after="240" w:line="240" w:lineRule="auto"/><w:ind w:firstLine="0" w:firstLineChars="0"/><w:jc w:val="center"/></w:pPr>',
   '<w:rPr><w:b/><w:sz w:val="32"/><w:szCs w:val="32"/></w:rPr></w:style>',
-  // VolumeTitle：卷标题页，pageBreakBefore 保证每卷都从新一页起
+  // VolumeTitle：卷封页，pageBreakBefore 保证每卷都从新一页起
   '<w:style w:type="paragraph" w:styleId="VolumeTitle"><w:name w:val="Volume Title"/><w:basedOn w:val="Normal"/><w:qFormat/>',
   '<w:pPr><w:pageBreakBefore/><w:spacing w:before="2400" w:after="600" w:line="240" w:lineRule="auto"/><w:ind w:firstLine="0" w:firstLineChars="0"/><w:jc w:val="center"/></w:pPr>',
   '<w:rPr><w:b/><w:sz w:val="44"/><w:szCs w:val="44"/></w:rPr></w:style>',
+  // 目录：标题居中，卷行加粗不缩进，章行缩进一级
+  '<w:style w:type="paragraph" w:styleId="CatalogTitle"><w:name w:val="Catalog Title"/><w:basedOn w:val="Normal"/><w:qFormat/>',
+  '<w:pPr><w:spacing w:before="600" w:after="480" w:line="240" w:lineRule="auto"/><w:ind w:firstLine="0" w:firstLineChars="0"/><w:jc w:val="center"/></w:pPr>',
+  '<w:rPr><w:b/><w:sz w:val="36"/><w:szCs w:val="36"/></w:rPr></w:style>',
+  '<w:style w:type="paragraph" w:styleId="CatalogVolume"><w:name w:val="Catalog Volume"/><w:basedOn w:val="Normal"/><w:qFormat/>',
+  '<w:pPr><w:spacing w:before="240" w:after="120" w:line="300" w:lineRule="auto"/><w:ind w:firstLine="0" w:firstLineChars="0"/></w:pPr>',
+  '<w:rPr><w:b/><w:sz w:val="26"/><w:szCs w:val="26"/></w:rPr></w:style>',
+  '<w:style w:type="paragraph" w:styleId="CatalogChapter"><w:name w:val="Catalog Chapter"/><w:basedOn w:val="Normal"/><w:qFormat/>',
+  '<w:pPr><w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="auto"/><w:ind w:leftChars="200" w:left="480" w:firstLine="0" w:firstLineChars="0"/></w:pPr>',
+  '<w:rPr><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr></w:style>',
   "</w:styles>",
 ].join("")
 
@@ -113,11 +123,31 @@ function 导Docx(书名: string, 章们: 章[]): 成品 {
     正文XML.push(标题段("第 " + 章.编号 + " 章　" + 章.标题, "Heading1"))
     for (const 行 of 段落们(章.正文)) 正文XML.push(正文段(行))
   }
-  const 正文XML: string[] = [标题段(书名, "Title")]
   const 卷表 = 分卷(章们)
+  const 正文XML: string[] = [标题段(书名, "Title")]
+
+  // 目录页：卷名一行（加粗），卷下每章一行（缩进一级）。纯文本目录，不用 TOC 域，Word 不会提示更新。
+  正文XML.push(标题段("目录", "CatalogTitle"))
   if (卷表) {
     for (const 卷项 of 卷表) {
-      正文XML.push(标题段(卷项.名, "VolumeTitle"))
+      正文XML.push(标题段(卷项.名, "CatalogVolume"))
+      for (const 章 of 卷项.章们) 正文XML.push(标题段("第 " + 章.编号 + " 章　" + 章.标题, "CatalogChapter"))
+    }
+  } else {
+    for (const 章 of 章们) 正文XML.push(标题段("第 " + 章.编号 + " 章　" + 章.标题, "CatalogChapter"))
+  }
+  // 目录之后强制翻页（不分卷时没有 VolumeTitle 的 pageBreakBefore 兜底）
+  正文XML.push('<w:p><w:r><w:br w:type="page"/></w:r></w:p>')
+
+  // 分卷封页：只有卷号/卷名，页前分页符由 VolumeTitle 的 pageBreakBefore 提供
+  const 卷封页字 = (卷项: 卷) => {
+    const 名 = (卷项.名 ?? "").trim()
+    const 默认名 = "第 " + 卷项.号 + " 卷"
+    return 名 && 名 !== 默认名 && !名.startsWith("第 " + 卷项.号) ? "第 " + 卷项.号 + " 卷　" + 名 : 默认名
+  }
+  if (卷表) {
+    for (const 卷项 of 卷表) {
+      正文XML.push(标题段(卷封页字(卷项), "VolumeTitle"))
       for (const 章 of 卷项.章们) 铺章(章)
     }
   } else {
@@ -160,6 +190,9 @@ function 导Docx(书名: string, 章们: 章[]): 成品 {
 
 // EPUB 的排版全在这张表里：中文行高 1.75、首行缩进 2em、段间 0.75em。
 const EPUB样式 = [
+  // 位置提示：EPUB 没有页码，用「卷内第 N/共 M 章」代替
+  ".位置 { margin: -0.4em 0 1.4em; text-align: center; text-indent: 0; font-size: 0.85em;",
+  "  color: #6b6b6b; letter-spacing: 0.05em; }",
   "body { margin: 0 6%; line-height: 1.75; color: #1a1a1a;",
   '  font-family: "Songti SC", "SimSun", "Noto Serif CJK SC", serif; }',
   "h1, h2 { margin: 1.6em 0 1em; text-align: center; font-weight: bold; line-height: 1.4;",
@@ -180,18 +213,32 @@ function 导EPUB(书名: string, 章们: 章[]): 成品 {
     内容 +
     "</body></html>"
 
+  const 卷表 = 分卷(章们)
+  // 章 → 位置提示：有卷就「第 N 卷 · 卷内第 i/共 m 章」，没卷就「全书第 i/共 m 章」
+  const 位置表 = new Map<章, string>()
+  if (卷表) {
+    for (const 卷项 of 卷表) {
+      const 共 = 卷项.章们.length
+      卷项.章们.forEach((章, 序) => {
+        位置表.set(章, "第 " + 卷项.号 + " 卷 · 卷内第 " + (序 + 1) + "/共 " + 共 + " 章")
+      })
+    }
+  } else {
+    章们.forEach((章, 序) => 位置表.set(章, "全书第 " + (序 + 1) + "/共 " + 章们.length + " 章"))
+  }
+
   const 章页 = 章们.map((章, 序) => {
     const 名 = "ch" + String(序 + 1).padStart(3, "0") + ".xhtml"
     const 标题 = "第 " + 章.编号 + " 章 " + 章.标题
     const 正文 = 段落们(章.正文).map((行) => "<p>" + 转义(行) + "</p>").join("")
-    return { 章, 名, 数据: xhtml(标题, "<h2>" + 转义(标题) + "</h2>" + 正文) }
+    const 位置 = '<p class="位置">' + 转义(位置表.get(章) ?? "") + "</p>"
+    return { 章, 名, 数据: xhtml(标题, "<h2>" + 转义(标题) + "</h2>" + 位置 + 正文) }
   })
 
   const 链接 = (页: { 名: string; 章: 章 }) =>
     '<li><a href="' + 页.名 + '">第 ' + 页.章.编号 + " 章 " + 转义(页.章.标题) + "</a></li>"
 
   // 有卷信息就两级目录：卷名不跳转（span），卷下挂本章各章。
-  const 卷表 = 分卷(章们)
   let 目录条 = ""
   if (卷表) {
     const 按章 = new Map<章, { 名: string; 章: 章 }>()
