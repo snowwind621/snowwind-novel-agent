@@ -7,6 +7,7 @@ import { 该压缩, 取要压的, 造摘要提示, 拼用户输入, 估算词元
 import type { 对话条 } from "../06 智能体运行时/对话压缩"
 import { 图标 } from "./图标"
 import { 归显示项, 过程标题, 过程图标, 过程进行中 } from "./对话分组"
+import { use流式渲染 } from "./流式渲染"
 import type { 显示项 } from "./对话分组"
 import type { 图标名 } from "./图标"
 import "./对话样式.css"
@@ -88,6 +89,19 @@ interface 消息组 {
   条们: 对话条目[]
   /** 这一块是一张过程卡（思考/工具合并），不是普通气泡组 */
   过程?: boolean
+  /** 普通回答的序号（导航轨刻度用它；过程卡不占刻度） */
+  刻度?: number
+}
+
+/** 助手正文：节流渲染成富文本（只喂渲染Markdown 自产的 HTML）。 */
+function 富文本消息(属性: { 条: 对话条目 }) {
+  const html = use流式渲染(属性.条.文本, !属性.条.进行中)
+  return (
+    <div
+      className={"消息体 富文本" + (属性.条.进行中 ? " 流式中" : "")}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  )
 }
 
 /** 过程卡：连续的过程条目装进一张卡，卡头是活动图标 + 会变的标题 + 折叠箭头。
@@ -141,6 +155,13 @@ function 归渲染块(项们: 显示项[]): 消息组[] {
     const 尾 = 组们[组们.length - 1]
     if (尾 && !尾.过程 && 尾.谁 === 条.谁 && 尾.名 === 名 && !条.计划 && !条.提问) 尾.条们.push(条)
     else 组们.push({ 谁: 条.谁, 名, 条们: [条] })
+  }
+  // 普通回答才占刻度：过程卡、你自己的话、计划卡/提问卡都不算
+  let 刻度 = 0
+  for (const 组 of 组们) {
+    if (组.过程 || 组.谁 === "你") continue
+    if (!组.条们.some((条) => 条.文本 && !条.计划 && !条.提问)) continue
+    组.刻度 = ++刻度
   }
   return 组们
 }
@@ -521,6 +542,51 @@ export function AI面板(属性: {
   }
 
   const 组们 = 归渲染块(归显示项(消息们))
+  const 回答们 = 组们.filter((组) => 组.刻度 !== undefined)
+  const [当前答, set当前答] = useState(0)
+
+  // 当前视口里的那条回答：用 IntersectionObserver 判，别每次滚动都算
+  useEffect(() => {
+    const 元素们 = Array.from(document.querySelectorAll(".流 [data-刻度]"))
+    if (元素们.length === 0 || typeof IntersectionObserver === "undefined") return
+    const 看 = new IntersectionObserver(
+      (条目们) => {
+        const 可见 = 条目们
+          .filter((项) => 项.isIntersecting)
+          .sort((甲, 乙) => 甲.boundingClientRect.top - 乙.boundingClientRect.top)[0]
+        if (!可见) return
+        const 号 = Number((可见.target as HTMLElement).dataset.刻度 ?? "0")
+        if (号 > 0) set当前答(号)
+      },
+      { root: document.querySelector(".流"), rootMargin: "0px 0px -60% 0px", threshold: 0.1 },
+    )
+    for (const 元素 of 元素们) 看.observe(元素)
+    return () => 看.disconnect()
+  }, [组们.length])
+
+  const 滚到 = (号: number) => {
+    const 目标 = document.getElementById("答-" + 号)
+    if (!目标) return
+    目标.scrollIntoView({ block: "center", behavior: "smooth" })
+    目标.classList.add("到过")
+    window.setTimeout(() => 目标.classList.remove("到过"), 1200)
+    set当前答(号)
+  }
+
+  // Alt+↑ / Alt+↓ 在回答之间跳
+  useEffect(() => {
+    const 按键 = (事件: KeyboardEvent) => {
+      if (!事件.altKey || (事件.key !== "ArrowUp" && 事件.key !== "ArrowDown")) return
+      const 总数 = 回答们.length
+      if (总数 === 0) return
+      事件.preventDefault()
+      const 下 = 事件.key === "ArrowDown"
+      const 目标 = Math.min(总数, Math.max(1, 当前答 + (下 ? 1 : -1)))
+      滚到(目标)
+    }
+    window.addEventListener("keydown", 按键)
+    return () => window.removeEventListener("keydown", 按键)
+  }, [当前答, 回答们.length])
 
   const 画内容 = (条: 对话条目) => {
     if (条.计划) {
@@ -623,11 +689,26 @@ export function AI面板(属性: {
         </div>
       )
     }
+    if (条.谁 !== "你" && 条.文本) return <富文本消息 条={条} />
+    if (条.谁 !== "你" && 条.文本) return <富文本消息 条={条} />
     return <div className="消息体">{条.文本}</div>
   }
 
   return (
     <div className="对话区">
+      {/* 极窄导航轨：hover 才显形，刻度只给普通回答 */}
+      {回答们.length > 0 ? (
+        <div className="导航轨" title={"回答导航（Alt+↑ / Alt+↓）· " + 回答们.length + " 条"}>
+          {回答们.map((组) => (
+            <button
+              key={组.刻度}
+              className={"导航刻度" + (当前答 === 组.刻度 ? " 当前" : "")}
+              onClick={() => 滚到(组.刻度 ?? 1)}
+              title={((组.条们.find((条) => 条.文本 && !条.计划 && !条.提问)?.文本 ?? "").replace(/\s+/g, " ").slice(0, 20)) || "第 " + 组.刻度 + " 条"}
+            />
+          ))}
+        </div>
+      ) : null}
       <div className="分段 对话分段">
         {模式们.map((名) => (
           <button
@@ -687,7 +768,12 @@ export function AI面板(属性: {
           const 我的 = 组.谁 === "你"
           const 显示名 = 组.名 !== 组.谁 ? 组.名 : ""
           return (
-            <div key={组序} className={"消息组" + (我的 ? " 我" : " 它")}>
+            <div
+              key={组序}
+              className={"消息组" + (我的 ? " 我" : " 它")}
+              id={组.刻度 ? "答-" + 组.刻度 : undefined}
+              data-刻度={组.刻度 ?? undefined}
+            >
               <div className="组图标" title={显示名 || 组.谁}>
                 <图标 名={说话人图标[组.谁]} 大小={15} />
               </div>

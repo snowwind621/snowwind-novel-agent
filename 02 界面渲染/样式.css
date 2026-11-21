@@ -1071,6 +1071,67 @@ body.拖宽中 { cursor: col-resize; user-select: none; }
   animation: none !important;
 }
 
+/* ===== 克制版美化：过渡 / 浮层模糊 / 极轻渐变（参考 OpenFic 的观感，实现自写） ===== */
+:root {
+  --动效时长: 160ms;
+  --动效快: 120ms;
+  --缓动: cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+/* 渐变只给最外层底，固定住不随滚动移动；左栏与顶栏保持纯色靠明度分层 */
+body { background-image: linear-gradient(160deg, #16181d 0%, #12141a 100%); background-attachment: fixed; }
+[data-主题="亮"] body { background-image: linear-gradient(160deg, #faf9f7 0%, #f0eee9 100%); }
+[data-主题="米黄"] body {
+  background-color: #f4eee0;
+  background-image: linear-gradient(160deg, #f7f2e7 0%, #f4eee0 100%);
+  background-attachment: fixed;
+}
+
+@keyframes 淡入 { from { opacity: 0; } to { opacity: 1; } }
+@keyframes 淡入上移 { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes 弹窗入 { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes 气泡入 { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes 展开入 { from { opacity: 0; clip-path: inset(0 0 100% 0); } to { opacity: 1; clip-path: inset(0); } }
+
+/* 1) 视图 / 页签切换：淡入 + 轻微上移 */
+.数据面板, .编辑器-正文区 { animation: 淡入上移 var(--动效时长) var(--缓动) both; }
+.左栏体 { animation: 淡入 var(--动效快) var(--缓动) both; }
+
+/* 2) 浮层：弹窗与菜单缩放淡入 */
+.设置框, .菜单 { animation: 弹窗入 140ms var(--缓动) both; }
+
+/* 3) 新消息气泡 */
+.消息组 { animation: 气泡入 180ms var(--缓动) both; }
+
+/* 4) 折叠展开（过程卡 / 思考块） */
+.过程体, .折叠体 { animation: 展开入 var(--动效时长) var(--缓动) both; }
+
+/* 5) hover 过渡：只过渡背景/描边/颜色，不做位移 */
+.列表行, .章项, .菜单项, .台账卡, .伏笔项, .一致卡, .数据导航项, .标签, .分段按钮, .设置导航项, .导航刻度, button, .小按钮 {
+  transition:
+    background-color var(--动效快) var(--缓动),
+    border-color var(--动效快) var(--缓动),
+    color var(--动效快) var(--缓动),
+    outline-color var(--动效快) var(--缓动);
+}
+
+/* 6) 模糊只给浮层：遮罩 / 菜单 / 悬停提示。正文区、数据面板内容层不碰 */
+.遮罩, .菜单, .图表提示 {
+  backdrop-filter: blur(8px) saturate(1.05);
+  -webkit-backdrop-filter: blur(8px) saturate(1.05);
+}
+.遮罩 { background: color-mix(in srgb, var(--底) 72%, transparent); }
+.菜单 { background: color-mix(in srgb, var(--底浅) 84%, transparent); }
+.图表提示 { background: color-mix(in srgb, var(--底更浅) 84%, transparent); }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .遮罩 { background: var(--底); }
+  .菜单 { background: var(--底浅); }
+  .图表提示 { background: var(--底更浅); }
+}
+
+/* 7) 减少动态：时长归零（配套的 animation/transition:none 在上面那段） */
+[data-减少动态="是"] { --动效时长: 0ms; --动效快: 0ms; }
+
 /* —— 滚动条：贴住各自容器的右边缘，细条 10px —— */
 .左栏体,
 .面板体,
