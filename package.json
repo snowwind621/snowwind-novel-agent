@@ -1,7 +1,7 @@
 {
   "name": "snowwind-novel-agent",
   "private": true,
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "雪风小说工坊 · AI 主导的长篇小说写作工作台",
   "type": "module",
   "main": "99 构建产物/main.cjs",
