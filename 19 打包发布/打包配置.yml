@@ -17,6 +17,13 @@ files:
 
 asar: true
 
+# 自动更新源：generic（静态服务器 / 对象存储都行）。发布时把 exe + blockmap + latest.yml
+# 一起传到这个目录，electron-updater 就会照 latest.yml 比对版本。地址改了只动这一行。
+publish:
+  provider: generic
+  url: https://example.com/xuefeng/updates
+  channel: latest
+
 # 直接用 node_modules 里已装好的 electron，不再从网上下 115 MB 的 zip；离线也能打包。
 electronDist: node_modules/electron/dist
 
