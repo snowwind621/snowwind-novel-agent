@@ -63,6 +63,20 @@ const 服务 = http.createServer(async (请求, 响应) => {
       }
     }
 
+    // 台账自动同步进度：一条 SSE 长连接，界面订阅用
+    if (地址 === "/接口/自动同步" && 请求.method === "GET") {
+      响应.writeHead(200, {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      })
+      处理器.设置推送((类型, 载荷) => {
+        响应.write("data: " + JSON.stringify({ 类型, 载荷 }) + "\n\n")
+      })
+      请求.on("close", () => 处理器.设置推送(() => {}))
+      return
+    }
+
     if (地址 === "/接口/对话" && 请求.method === "POST") {
       const 对话 = JSON.parse(await 读体(请求)) as 对话请求
       响应.writeHead(200, {

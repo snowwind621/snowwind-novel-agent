@@ -65,6 +65,11 @@ app.whenReady().then(async () => {
     ipcMain.handle(名, async (_事件, ...参数: any[]) => 函数(...参数))
   }
 
+  // 台账自动同步的进度：主进程把它推到所有窗口（界面据此更新状态字）
+  处理器.设置推送((类型, 载荷) => {
+    for (const 窗 of BrowserWindow.getAllWindows()) 窗.webContents.send(类型, 载荷)
+  })
+
   ipcMain.handle(通道.发送对话, async (事件, 请求: 对话请求) => {
     const 发 = (类型: "思考" | "正文", 文本: string) =>
       事件.sender.send(推送事件.对话增量, { 请求号: 请求.请求号, 类型, 文本 })
