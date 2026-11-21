@@ -149,6 +149,13 @@ export const 工具表: 工具定义[] = [
     },
   },
   {
+    名称: "query_inconsistent",
+    中文名: "查不一致",
+    说明: "跨台账查「改了这处忘了那处」：出场追踪漏人、已兑伏笔没时间线、属性与队伍状态不符、关系线人物无卡、章号越界等。只读。",
+    写盘: false,
+    参数: {},
+  },
+  {
     名称: "write_chapter",
     中文名: "写章节",
     说明: "把整章正文覆盖写成给定内容并提交。会改动正文文件，属于写盘工具，必须先得到作者确认。",
@@ -275,6 +282,7 @@ export interface 工具环境 {
   查设定: (名: string) => Promise<{ 文本: string; 找到: boolean }>
   查伏笔: (只看: string) => Promise<string>
   查知情: (秘密: string, 人: string, 截至章: number | null) => Promise<string>
+  查不一致: () => Promise<string>
   建计划: (
     标题: string,
     目标: string,
@@ -423,6 +431,10 @@ export async function 跑工具(名: string, 原始参数: unknown, 环境: 工�
       case "spawn_agent": {
         const 文本 = await 环境.派子智能体(String(参数.成员或角色), String(参数.任务))
         return 收尾(定义, 参数, 轮次, 文本, "子智能体已跑完一轮")
+      }
+      case "query_inconsistent": {
+        const 文本 = await 环境.查不一致()
+        return 收尾(定义, 参数, 轮次, 文本, "已跑一遍一致性检查")
       }
       case "query_knowledge": {
         const 文本 = await 环境.查知情(String(参数.秘密 ?? ""), String(参数.人 ?? ""), 参数.截至章 === undefined ? null : Number(参数.截至章))
