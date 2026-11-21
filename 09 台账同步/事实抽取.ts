@@ -35,6 +35,13 @@ function 取JSON(文本: string): any {
   throw new Error("模型没有返回可用 JSON，原文开头：" + 去块.slice(0, 200))
 }
 
+/** 这一次抽取累计用掉的词元（多次提问累加），由调用方在开头清零。 */
+const 累计用量 = { 输入: 0, 输出: 0 }
+
+export function 取本次用量(): { 输入: number; 输出: number } {
+  return { ...累计用量 }
+}
+
 async function 问一次(参数: 抽取参数, 提示: string, 上限: number): Promise<any> {
   let 正文段 = ""
   let 全部段 = ""
@@ -49,6 +56,17 @@ async function 问一次(参数: 抽取参数, 提示: string, 上限: number): 
     温度: 0,
     最大词元: 上限,
     回调: (类型, 文本) => {
+      // 网关把用量单独推一条事件，别混进正文里
+      if (类型 === "用量") {
+        try {
+          const 量 = JSON.parse(文本)
+          累计用量.输入 += Number(量?.输入 ?? 0)
+          累计用量.输出 += Number(量?.输出 ?? 0)
+        } catch {
+          /* 解析不了就不记 */
+        }
+        return
+      }
       全部段 += 文本
       if (类型 === "正文") 正文段 += 文本
     },
@@ -63,6 +81,8 @@ async function 问一次(参数: 抽取参数, 提示: string, 上限: number): 
 
 /** 第一步：谁在场、哪天、发生了什么。 */
 export async function 抽取本章事实(参数: 抽取参数): Promise<抽取结果> {
+  累计用量.输入 = 0
+  累计用量.输出 = 0
   const 基础 = await 问一次(
     参数,
     [
