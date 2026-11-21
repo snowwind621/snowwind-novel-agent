@@ -121,7 +121,7 @@ export function 三栏布局() {
     const 卸载 = 桥.监听派活((事件) => {
       const id = 派活占位.current
       if (!id) return
-      const 行 = "正在召集负责人… " + 事件.完成数 + "/" + 事件.总数 + "　" + (事件.阶段 === "完成" ? "✓ " : "… ") + 事件.成员
+      const 行 = "正在召集负责人… " + 事件.完成数 + "/" + 事件.总数 + "　" + (事件.阶段 === "完成" ? "已回 " : "进行中 ") + 事件.成员
       set消息们((旧) => 旧.map((条) => (条.id === id ? { ...条, 文本: 行 } : 条)))
     })
     return 卸载
@@ -344,7 +344,7 @@ export function 三栏布局() {
     return 卸
   }, [])
 
-  /** 一致性：状态字上那个「⚠ N 处不一致」的数字 */
+  /** 一致性：状态字上那个「N 处不一致」的数字 */
   const [不一致数, set不一致数] = useState(0)
   const [分类请求, set分类请求] = useState<string | null>(null)
   useEffect(() => {
@@ -361,7 +361,7 @@ export function 三栏布局() {
       }
     }
     void 拉()
-    // 开窗那一刻书库可能还没装载完，1.5 秒后再补一次，别让状态字一直显示「✓」
+    // 开窗那一刻书库可能还没装载完，1.5 秒后再补一次，别让状态字一直显示「一致」
     const 补 = window.setTimeout(() => void 拉(), 1500)
     const 计 = window.setInterval(() => void 拉(), 5000)
     const 卸 = 桥.监听一致性?.((事件) => {

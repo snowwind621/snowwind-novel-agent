@@ -41,6 +41,7 @@ function 读模式(): 模式 {
   return "对话"
 }
 
+/** 工具回执 → 一行摘要（不带任何 emoji，图标另外画） */
 function 工具说明(回: 工具回执): string {
   const 对 = 回.参数 && typeof 回.参数 === "object" ? Object.entries(回.参数).slice(0, 3) : []
   const 参数 = 对.map(([键, 值]) => 键 + ":" + (typeof 值 === "string" ? "\u201c" + 值 + "\u201d" : String(值))).join(", ")
@@ -50,7 +51,7 @@ function 工具说明(回: 工具回执): string {
       : 回.状态 === "待确认"
         ? "等你回一句「确认」"
         : 回.状态
-  return "🔧 " + (回.中文名 || 回.名称) + (参数 ? "（{" + 参数 + "}）" : "") + " → " + 尾 + (回.摘要 ? "：" + 回.摘要 : "")
+  return (回.中文名 || 回.名称) + (参数 ? "（{" + 参数 + "}）" : "") + " → " + 尾 + (回.摘要 ? "：" + 回.摘要 : "")
 }
 
 function 千分(数: number): string {
@@ -128,6 +129,8 @@ export function AI面板(属性: {
   const [讨论中, set讨论中] = useState(false)
   const [错误, set错误] = useState("")
   const [提示, set提示] = useState("")
+  /** 提问卡里「自己写一句」的草稿，按气泡 id 存 */
+  const [自定义答, set自定义答] = useState<Record<string, string>>({})
   const [摘要, set摘要] = useState("")
   const [已压条数, set已压条数] = useState(0)
   const 当前请求 = useRef("")
@@ -136,6 +139,8 @@ export function AI面板(属性: {
   const 讨论等待 = useRef(new Map<string, () => void>())
   const 讨论文本 = useRef(new Map<string, string>())
   const 工具已见 = useRef(new Set<string>())
+  /** 思考是流式一段段来的：补条只吃补丁，所以这里攒一份再整段写进去 */
+  const 思考缓存 = useRef(new Map<string, string>())
 
   const 分工 = 设定?.模型.分工
   const 模型们 = Array.from(new Set([分工?.总编, 分工?.执笔, 分工?.审校, 分工?.助手].filter(Boolean) as string[]))
@@ -203,6 +208,10 @@ export function AI面板(属性: {
         if (事件.类型 === "正文") {
           改条(回条, 事件.文本)
           讨论文本.current.set(事件.请求号, (讨论文本.current.get(事件.请求号) ?? "") + 事件.文本)
+        } else if (事件.类型 === "思考") {
+          const 旧 = 思考缓存.current.get(回条) ?? ""
+          思考缓存.current.set(回条, 旧 + 事件.文本)
+          补条(回条, { 思考: 旧 + 事件.文本 })
         } else if (事件.类型 === "用量") {
           try {
             补条(回条, { 用量: JSON.parse(事件.文本) as 用量 })
@@ -225,7 +234,11 @@ export function AI面板(属性: {
       if (事件.请求号 !== 当前请求.current) return
       const 回条 = 事件.请求号 + "-回"
       if (事件.类型 === "正文") 改条(回条, 事件.文本)
-      else if (事件.类型 === "结束") {
+      else if (事件.类型 === "思考") {
+        const 旧 = 思考缓存.current.get(回条) ?? ""
+        思考缓存.current.set(回条, 旧 + 事件.文本)
+        补条(回条, { 思考: 旧 + 事件.文本 })
+      } else if (事件.类型 === "结束") {
         补条(回条, { 进行中: false })
         set对话中(false)
       } else if (事件.类型 === "错误") {
@@ -491,30 +504,99 @@ export function AI面板(属性: {
       )
     }
     if (条.提问) {
+      const 已答 = 条.提问答 ?? ""
+      const 选项们 = Array.isArray(条.提问.选项) ? 条.提问.选项 : []
       return (
-        <div className="提问卡">
+        <div className={"提问卡" + (已答 ? " 已答" : "")}>
+          <div className="提问卡头">
+            <图标 名="灯泡" 大小={15} />
+            <span>总控需要你决定</span>
+            {已答 ? <span className="提问已答">已答（选了「{已答}」）</span> : null}
+          </div>
           <div className="提问问题">{条.提问.问题}</div>
-          {条.提问.选项 && 条.提问.选项.length > 0 ? (
+          {条.提问.建议 ? <div className="提问建议">建议：{条.提问.建议}</div> : null}
+          {选项们.length > 0 ? (
             <div className="提问选项">
-              {条.提问.选项.map((项) => (
-                <button key={项} onClick={() => void 发(项)} title={"回一句：" + 项}>
+              {选项们.map((项) => (
+                <button
+                  key={项}
+                  disabled={Boolean(已答)}
+                  onClick={() => {
+                    补条(条.id, { 提问答: 项 })
+                    void 发(项)
+                  }}
+                  title={已答 ? "这张卡已经答过了" : "回一句：" + 项}
+                >
                   {项}
                 </button>
               ))}
             </div>
           ) : null}
+          {已答 ? null : (
+            <div className="提问自答">
+              <input
+                className="工具输入"
+                placeholder="或者自己写一句…"
+                value={自定义答[条.id] ?? ""}
+                onChange={(事件) => set自定义答((旧) => ({ ...旧, [条.id]: 事件.target.value }))}
+                onKeyDown={(事件) => {
+                  if (事件.key !== "Enter") return
+                  const 文 = (自定义答[条.id] ?? "").trim()
+                  if (!文) return
+                  补条(条.id, { 提问答: 文 })
+                  void 发(文)
+                }}
+              />
+              <button
+                className="小按钮"
+                disabled={!(自定义答[条.id] ?? "").trim()}
+                onClick={() => {
+                  const 文 = (自定义答[条.id] ?? "").trim()
+                  if (!文) return
+                  补条(条.id, { 提问答: 文 })
+                  void 发(文)
+                }}
+              >
+                用这句回答
+              </button>
+            </div>
+          )}
         </div>
       )
     }
     if (条.工具) {
+      const 类 = 条.工具.状态 === "待确认" ? " 待确认" : 条.工具.状态 === "失败" ? " 失败" : 条.工具.状态 === "完成" ? " 完成" : ""
       return (
-        <div className={"工具条" + (条.工具.状态 === "待确认" ? " 待确认" : "") + (条.工具.状态 === "失败" ? " 失败" : "")}>
-          <图标 名={条.工具.状态 === "完成" ? "勾" : 条.工具.状态 === "开始" ? "播放" : "警告"} 大小={14} />
-          <span>{条.文本}</span>
-        </div>
+        <details className={"工具块" + 类}>
+          <summary className="折叠头">
+            <图标 名="播放" 大小={14} />
+            <span className="折叠题">工具 · {条.文本}</span>
+          </summary>
+          <div className="折叠体">
+            <div className="折叠行">状态：{条.工具.状态}（第 {条.工具.轮次 ?? 1} 轮）</div>
+            {条.工具.参数 && Object.keys(条.工具.参数).length > 0 ? (
+              <div className="折叠行">参数：{JSON.stringify(条.工具.参数)}</div>
+            ) : null}
+            {typeof 条.工具.结果字数 === "number" ? <div className="折叠行">结果字数：{条.工具.结果字数}</div> : null}
+            {条.工具.摘要 ? <div className="折叠行">摘要：{条.工具.摘要}</div> : null}
+          </div>
+        </details>
       )
     }
-    return <div className="消息体">{条.文本}</div>
+    return (
+      <>
+        {条.思考 ? (
+          <details className="思考块">
+            <summary className="折叠头">
+              <图标 名="笔" 大小={14} />
+              <span className="折叠题">思考 · {条.思考.replace(/\s/g, "").length} 字</span>
+            </summary>
+            <div className="折叠体 思考文">{条.思考}</div>
+          </details>
+        ) : null}
+        {条.文本 ? <div className="消息体">{条.文本}</div> : null}
+      </>
+    )
   }
 
   return (

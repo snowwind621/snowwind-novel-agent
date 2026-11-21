@@ -481,7 +481,8 @@ export function 视觉总览(属性: {
               ) : null}
               {项.级别 === "可补齐" ? (
                 <button className="一致补" onClick={() => void 补齐([项])} disabled={补齐中} title="就改这一处">
-                  ✓ 补齐
+                  <图标 名="勾" 大小={13} />
+                  补齐
                 </button>
               ) : 项.级别 === "提示" ? (
                 <div className="一致提示 提">计划/半成品里的正常情况，不用管</div>

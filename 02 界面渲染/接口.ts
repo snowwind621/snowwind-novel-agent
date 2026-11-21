@@ -35,6 +35,8 @@ export interface 计划卡 {
 export interface 提问卡 {
   问题: string
   选项?: string[]
+  /** 预设之外的建议回答（灰字一段，可点也可抄） */
+  建议?: string
 }
 
 /** 某一章上一次自动同步的结果 */
@@ -184,6 +186,10 @@ export interface 对话条目 {
   计划?: 计划卡
   /** 问题气泡 */
   提问?: 提问卡
+  /** 这一条已经答了哪一句（答过的卡按钮置灰） */
+  提问答?: string
+  /** 思考过程（流式累积，界面上折叠成一块） */
+  思考?: string
 }
 
 export interface 同步结果 {

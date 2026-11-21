@@ -155,3 +155,75 @@
 /* —— 提问卡 —— */
 .提问问题 { color: var(--字); font-size: 12.5px; margin-bottom: 8px; }
 .提问选项 { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* —— 折叠块：思考过程与工具回执 —— */
+.折叠头 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--字弱);
+  font-size: 11.5px;
+  padding: 2px 0;
+}
+.折叠头::-webkit-details-marker { display: none; }
+.折叠头::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 4px solid currentColor;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  transition: transform 0.12s ease;
+}
+details[open] > .折叠头::before { transform: rotate(90deg); }
+.折叠题 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.折叠体 {
+  margin: 6px 0 0 10px;
+  padding-left: 8px;
+  border-left: 1px solid var(--线淡);
+  color: var(--字弱);
+  font-size: 11.5px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+.折叠行 { overflow-wrap: anywhere; }
+.思考块, .工具块 { margin: 0 0 6px; }
+.工具块 .折叠头 { color: var(--字弱); }
+.工具块.完成 .折叠头 { color: var(--好); }
+.工具块.失败 .折叠头, .工具块.待确认 .折叠头 { color: var(--警); }
+
+/* —— 正文换行：中文正常排版，只有超长无空格串才硬断 —— */
+.气泡 .消息体 {
+  white-space: pre-wrap;
+  word-break: normal;
+  line-break: normal;
+  overflow-wrap: break-word;
+}
+/* 气泡本身只在超长无空格串时才硬断，中文不做逐字断 */
+.气泡 { word-break: normal; line-break: normal; overflow-wrap: break-word; }
+.消息体 pre, .消息体 code { overflow-wrap: anywhere; }
+
+/* —— 提问卡 —— */
+.提问卡头 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--字);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.提问已答 { margin-left: auto; color: var(--好); font-size: 11px; }
+.提问卡.已答 .提问选项 button { opacity: 0.55; }
+.提问建议 {
+  margin: 6px 0 10px;
+  color: var(--字弱);
+  font-size: 11.5px;
+  line-height: 1.7;
+  padding-left: 8px;
+  border-left: 2px solid var(--线淡);
+}
+.提问自答 { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+.提问自答 .工具输入 { flex: 1 1 auto; }
